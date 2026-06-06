@@ -63,6 +63,7 @@ files = [
     "autosentry/reasoning/assessor.py",
     "autosentry/alarm/controller.py",
     "autosentry/notify/notifier.py",
+    "autosentry/watchdog.py",
     "autosentry/app.py",
 ]
 

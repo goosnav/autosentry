@@ -185,6 +185,10 @@ class MeshGateway:
         """Nodes currently flagged offline/tamper — each is itself an alert (SR-2)."""
         return [n for n in self._nodes.values() if not n.online]
 
+    def on_battery_nodes(self) -> list[NodeStatus]:
+        """Online nodes running on battery — a mains-loss alert the owner must see (FR-10)."""
+        return [n for n in self._nodes.values() if n.online and n.on_battery]
+
     def close(self) -> None:
         if self._transport is not None:
             self._transport.close()

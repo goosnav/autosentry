@@ -55,11 +55,11 @@ its status and names the evidence (test id / drill / inspection note).
 | FR-7 | T | L3 | ALARM → signed LoRa broadcast → node siren fires (bench). | M3 | ◐ `test_mesh_gateway` signed broadcast + shared-counter repeats ☑; ALARM→mesh wired in `Hub._actuate` (gated `comms.enabled`); node-siren bench pending hardware |
 | FR-8 | T | L3 | Node ACKs; hub marks online; kill node → marked offline. | M3 | ◐ `test_mesh_gateway` ACK-gated retry + node-health table + offline-flag ☑; on-target ACK bench pending |
 | FR-9 | T | L3 | Heartbeat loss → hub alert; isolated node → local alert. | M3/M4 | ◐ hub heartbeat cadence + offline-after-misses unit-tested ☑; node fail-safe implemented (firmware); bench pending |
-| FR-10 | T | L2 | Pull node mains; `STATUS.on_battery` true at hub. | M4 | ☐ |
+| FR-10 | T | L2 | Pull node mains; `STATUS.on_battery` true at hub. | M4 | ◐ `test_mesh_gateway` STATUS→on_battery surfaced while online ☑; `test_reliability` Hub.power_alerts/health surface offline+on-battery ☑; firmware reports STATUS w/ on_battery; real INA219 mains-sense bench pending |
 | FR-11 | D | L3 | Speak; reply changes with injected vision context. | M5 | ☐ |
 | FR-12 | D | L2 | During voice dialogue, alarm + notify still fire. | M5 | ☐ |
 | FR-13 | D | L2 | Offline → notification queues; reconnect → flushes. | M6 | ☐ |
-| FR-14 | D | L2 | Panic forces ALARM from each mode; test mode no-latch; per-zone arm. | M4/M6 | ☐ |
+| FR-14 | D | L2 | Panic forces ALARM from each mode; test mode no-latch; per-zone arm. | M4/M6 | ◐ `test_reliability` panic-forces-ALARM-when-disarmed, test-mode-pulses-no-latch, disarmed-reaches-ALARM-but-silent, armed-fires-siren ☑; operator UI deferred to M6 |
 | FR-15 | I | L2 | Inspect event log: ts, keyframe, assessment, actions present. | M2 | ◐ `test_event_log` ts/zone/level/assessment/actions persisted ☑; keyframe-ref persistence pending |
 | FR-16 | D | L2 | Threat in zone A, benign in zone B; correct attribution. | M6 | ☐ |
 | PR-1 | T | L2 | Measure FPS on Orin NX @1080p ≥15. | M1 | ☐ deferred to on-Jetson bench |
@@ -71,10 +71,10 @@ its status and names the evidence (test id / drill / inspection note).
 | PR-7 | T | L2 | Time from node-kill to hub-offline-flag ≤30 s. | M3 | ◐ offline-detection logic verified (`test_node_goes_offline_after_missed_heartbeats`, deadline = hb_interval×hb_miss_max ≤30 s); wall-clock on-target pending |
 | PR-8 | T | L2 | Measure subject-stop→reply-audio ≤2 s. | M5 | ☐ |
 | IR-1..4 | I/T | L3 | Inspect each seam against ICD-1..7; codec round-trip tests. | M0–M3 | ◐ IR-2 (ICD-2 transport) COBS/CRC round-trip + corruption ☑; IR-3 (ICD-3 air) payload codec round-trips ☑; IR-4 scaffolded |
-| RR-1 | T | L2 | Crash/hang injection → auto-restart. | M4 | ☐ |
-| RR-2 | A | L2 | Availability computed from MTBF/MTTR ≥99.9%. | M4 | ☐ |
-| RR-3 | T | L2 | Battery-runtime measurement hub/node. | M4 | ☐ |
-| RR-4 | T | L3 | Inject camera/VLM/mesh failures → graceful DEGRADED. | M4 | ☐ |
+| RR-1 | T | L2 | Crash/hang injection → auto-restart. | M4 | ◐ `test_watchdog` ping cadence + stalled-loop-stops-pinging ☑; `deploy/autosentry.service` Type=notify w/ WatchdogSec; on-target systemd kill/restart demo pending |
+| RR-2 | A | L2 | Availability computed from MTBF/MTTR ≥99.9%. | M4 | ☐ deferred to on-target MTBF/MTTR analysis |
+| RR-3 | T | L2 | Battery-runtime measurement hub/node. | M4 | ☐ deferred to hardware battery-runtime bench |
+| RR-4 | T | L3 | Inject camera/VLM/mesh failures → graceful DEGRADED. | M4 | ◐ `test_reliability` detector-fault-degrades-no-crash, assessor-fault-never-manufactures-ALARM ☑; mesh-broadcast fault caught in `_actuate` (local siren unaffected) ☑; on-target fault injection pending |
 | RR-5 | A/T | L3 | Kill one node → mesh + hub unaffected. | M3/M4 | ◐ per-source node-health isolation unit-tested (one node offline doesn't perturb others); multi-node bench pending |
 | SR-1 | T | L4 | HMAC test vectors; replayed counter rejected. | M3 | ◐ forged-HMAC drop + replayed-counter reject unit-tested (`test_mesh_gateway`); protocol codec + ReplayWindow tested in M0; node-side replay window mirrors protocol.py |
 | SR-2 | T | L3 | Jam/tamper → alert. | M3/M4 | ◐ hub offline-flag on heartbeat silence + node hub-timeout fail-safe implemented ☑; physical jam/tamper bench pending |
@@ -85,7 +85,7 @@ its status and names the evidence (test id / drill / inspection note).
 | SE-3 | A | L2 | Bias eval across demographic slices on the benchmark. | M2 | ☐ |
 | SE-4 | I | L2 | Inspect on-device processing + retention/consent config. | M2 | ☐ |
 | SE-5 | D | L2 | Authority-contact path requires human confirm. | M6 | ☐ |
-| ER-1 | I | L3 | Inspect enclosure IP rating + temp spec. | M4 | ☐ |
+| ER-1 | I | L3 | Inspect enclosure IP rating + temp spec. | M4 | ☐ deferred to hardware enclosure inspection (≥IP65) |
 | ER-2 | D | L2 | Night/low-light detection demo. | M1 | ☐ |
 
 ## 5. Validation drills (L1, against the ConOps OS-1..8)

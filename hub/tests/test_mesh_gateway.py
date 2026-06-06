@@ -123,6 +123,16 @@ def test_status_updates_node_battery():
     assert node.on_battery is True
 
 
+def test_on_battery_nodes_surfaced_only_while_online():
+    gw, t = _gateway()
+    t.inbox.append(_node_frame(MsgType.STATUS, counter=1, payload=_status_bytes()))
+    gw.poll(now=0.0)
+    assert [n.node_id for n in gw.on_battery_nodes()] == [NODE]  # online + on battery
+    gw.refresh(now=1000.0)  # node goes silent -> offline, no longer "on battery" alert
+    assert gw.on_battery_nodes() == []
+    assert [n.node_id for n in gw.offline_nodes()] == [NODE]
+
+
 # --- heartbeat / offline detection (FR-9, PR-7) ---------------------------------------
 def test_tick_emits_heartbeat_at_cadence():
     cfg = CommsConfig(hb_interval_s=5.0)

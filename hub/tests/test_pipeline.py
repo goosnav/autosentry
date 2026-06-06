@@ -36,8 +36,13 @@ class FakeAssessor:
 
     def assess(self, tracks, keyframes, zone: str, ts: float) -> ThreatAssessment:
         return ThreatAssessment(
-            armed=self._armed, weapon_type="rifle" if self._armed else None,
-            intent="test", confidence=self._confidence, description="", zone=zone, ts=ts,
+            armed=self._armed,
+            weapon_type="rifle" if self._armed else None,
+            intent="test",
+            confidence=self._confidence,
+            description="",
+            zone=zone,
+            ts=ts,
         )
 
 
@@ -108,6 +113,7 @@ def test_confirmed_threat_reaches_alarm_and_fires_siren():
     # A high-confidence armed assessment that persists across the confirmation window
     # escalates SUSPECT -> THREAT -> ALARM and drives the local siren (FR-6).
     hub, sink = _hub([_det("rifle", 0.9)], assessor=FakeAssessor(armed=True, confidence=0.95))
+    hub.arm("default")  # actuation requires an armed zone (FR-14)
     levels = [hub.step("default", _frame(float(i))).level for i in range(4)]
     assert levels[0] == Level.SUSPECT
     assert Level.THREAT in levels
@@ -125,6 +131,7 @@ def test_alarm_clears_and_silences_siren_on_return_to_normal():
     # Leaving ALARM silences the siren and audits the action (FR-6); only an explicit
     # CLEAR turns the latched siren off.
     hub, sink = _hub([_det("rifle", 0.9)], assessor=FakeAssessor(armed=True, confidence=0.95))
+    hub.arm("default")  # actuation requires an armed zone (FR-14)
     for i in range(4):
         hub.step("default", _frame(float(i)))
     assert hub.alarm.active is True
