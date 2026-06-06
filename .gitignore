@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Models & weights (large; pulled via scripts/download_models.py)
+models/
+*.pt
+*.onnx
+*.engine
+*.gguf
+*.bin
+!firmware/**/*.bin
+
+# Runtime data
+data/
+events.db
+*.sqlite
+*.log
+captures/
+recordings/
+
+# ---- Environment / secrets ----
+.env
+.env.*
+!.env.example
+.env.example
+secrets/
+*.key
+*.pem
+node_keys.yaml
+
+# PlatformIO / firmware build
+.pio/
+firmware/**/.pio/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

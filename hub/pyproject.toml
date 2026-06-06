@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autosentry"
+version = "0.1.0"
+description = "AutoSentry hub: local-first intelligent security (detect -> alarm -> LoRa mesh -> voice)."
+requires-python = ">=3.10"
+license = { text = "TBD" }
+
+# Base deps are intentionally light so core modules (contracts, state, comms codec)
+# import and test without the ML stack. Heavy/optional deps live in extras and are
+# lazy-imported inside the modules that need them (detection, reasoning, voice).
+dependencies = [
+    "pydantic>=2.5",
+    "pydantic-settings>=2.1",
+    "pyyaml>=6.0",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+# Vision stack (stage-1 + tracking). On Jetson, prefer the JetPack TensorRT build.
+vision = ["ultralytics>=8.1", "onnxruntime>=1.17", "opencv-python>=4.9"]
+# Stage-2 reasoning + conversational LLM are served by a local runtime (Ollama / llama.cpp)
+# reached over HTTP; the client dep is light.
+reason = ["httpx>=0.27"]
+# Voice agent.
+voice = ["faster-whisper>=1.0", "sounddevice>=0.4"]
+dev = ["pytest>=8.0", "ruff>=0.4", "mypy>=1.9", "types-PyYAML>=6.0"]
+
+[project.scripts]
+autosentry = "autosentry.app:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["autosentry*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_ignores = true
+ignore_missing_imports = true
+# Only the light, fully-typed core is checked strictly; ML stubs are exempt until implemented.
+files = [
+    "autosentry/contracts.py",
+    "autosentry/state",
+    "autosentry/comms/protocol.py",
+    "autosentry/comms/payloads.py",
+    "autosentry/comms/transport.py",
+    "autosentry/comms/gateway.py",
+    "autosentry/config.py",
+    "autosentry/detection/tracking.py",
+    "autosentry/detection/triggers.py",
+    "autosentry/detection/detector.py",
+    "autosentry/capture/source.py",
+    "autosentry/reasoning/assessor.py",
+    "autosentry/alarm/controller.py",
+    "autosentry/notify/notifier.py",
+    "autosentry/watchdog.py",
+    "autosentry/app.py",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

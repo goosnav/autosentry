@@ -1,0 +1,32 @@
+# systemd unit for the AutoSentry hub (RR-1, FMEA F4).
+# Auto-start on boot, auto-restart on crash/hang, with a systemd watchdog so a hung
+# pipeline is killed and restarted (the SW half of the HW+SW watchdog).
+#
+# Install:
+#   sudo cp deploy/autosentry.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now autosentry
+# The mesh key is provided out-of-tree via an environment file (never committed, SR-3):
+#   sudo install -m 600 /dev/stdin /etc/autosentry/mesh.env  # AUTOSENTRY_MESH_KEY=...
+
+[Unit]
+Description=AutoSentry hub (local-first intelligent security)
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+# notify: the app sends READY=1 once the pipeline is up and WATCHDOG=1 each loop (RR-1).
+Type=notify
+User=autosentry
+WorkingDirectory=/opt/autosentry
+EnvironmentFile=/etc/autosentry/mesh.env
+ExecStart=/opt/autosentry/.venv/bin/autosentry --config /etc/autosentry/config.yaml
+Restart=always
+RestartSec=2
+# Watchdog: the app must ping sd_notify within this window or systemd restarts it (RR-1).
+WatchdogSec=30
+NotifyAccess=main
+# Let an active siren finish rather than being cut on restart.
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
