@@ -1,0 +1,22 @@
+subsystem,ref,item,qty,example_part,notes
+hub,HUB-1,SBC compute,1,NVIDIA Jetson Orin NX 16GB dev kit,Orin Nano Super 8GB budget / AGX Orin if running all models at max quality
+hub,HUB-2,NVMe SSD,1,256GB+ M.2 NVMe,models + event store (FR-15)
+hub,HUB-3,Camera (dev),1,Logitech Brio / C920 UVC,USB UVC per ICD-1; CSI IMX219/477 or RTSP/PoE for prod
+hub,HUB-4,IR illuminator,1,850nm IR LED panel,night operation (ER-2)
+hub,HUB-5,LoRa gateway radio,1,LilyGO T3-S3 (SX1262) over USB,or Waveshare SX1262 HAT; runs hub_gateway firmware env (ICD-2)
+hub,HUB-6,Outdoor speaker,1,8ohm horn speaker + amp,local voice + siren audio out (ICD-4)
+hub,HUB-7,Siren/strobe,1,12V piezo siren + strobe,driven via GPIO/relay (ICD-4, FR-6)
+hub,HUB-8,Relay/MOSFET board,1,opto-isolated relay or logic-level MOSFET,switches 12V siren/strobe from 3.3V GPIO
+hub,HUB-9,Battery,1,12V LiFePO4 8-20Ah,hub runtime >= 4h (RR-3, PR-8)
+hub,HUB-10,DC-DC + UPS path,1,12V->5V/USB-C PD UPS module,mains->battery failover (POWER_AND_RELIABILITY.md)
+node,ND-1,ESP32+LoRa board,3+,LilyGO T3-S3 / Heltec WiFi LoRa 32 V3,ESP32-S3 + SX1262 + OLED; one per alarm node
+node,ND-2,Siren,1 per node,12V piezo/horn siren,>= 10 min siren reserve (RR-3)
+node,ND-3,Siren driver,1 per node,logic-level MOSFET + flyback diode,switch siren from 3.3V GPIO
+node,ND-4,Strobe LED,1 per node,high-output LED + driver,visual alarm
+node,ND-5,Battery,1 per node,LiFePO4 ~6Ah or 2x18650,node standby >= 24h (RR-3, PR-8)
+node,ND-6,Charger / power-path,1 per node,TP4056-class + USB-mains,charges from mains, runs on battery on mains-loss
+node,ND-7,Mains/current sense,1 per node,INA219 (I2C),detect + report mains-loss (FR-10)
+node,ND-8,Enclosure,1 per node,IP65 weatherproof box,outdoor rated (ER-1)
+node,ND-9,Antenna,1 per node,915/868MHz whip,match region band (PR-6)
+common,CM-1,Antenna (hub gw),1,915/868MHz,region band per regulatory domain
+common,CM-2,Wiring/connectors,1 lot,JST/Wago/silicone wire,power-path + signal

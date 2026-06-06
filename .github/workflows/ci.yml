@@ -1,0 +1,48 @@
+# CI: lint + type-check + unit tests for the hub package (right-arm L4 gate, M0 exit).
+# The core (contracts, state machine, LoRa codec) installs and tests without the ML stack,
+# so CI stays fast and hardware-free.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  hub:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    defaults:
+      run:
+        working-directory: hub
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install (dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Ruff lint
+        run: ruff check .
+      - name: Mypy (typed core only)
+        run: mypy
+      - name: Pytest
+        run: pytest -q
+        env:
+          AUTOSENTRY_MESH_KEY: ci-dummy-key
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PlatformIO
+        run: pip install platformio
+      - name: Build alarm-node firmware
+        run: pio run -d firmware/alarm_node -e lilygo_t3s3

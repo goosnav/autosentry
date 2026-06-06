@@ -1,0 +1,111 @@
+# VERIFICATION & VALIDATION — V&V Plan + Traceability
+
+**V-Model:** the entire **right arm**. **Verification** = "did we build the system right?" (against the SRD).
+**Validation** = "did we build the right system?" (against the ConOps). Methods: **I**/**A**/**D**/**T**.
+
+A requirement is **DONE only when its V&V activity passes** and its RTM row is green.
+
+---
+
+## 1. The four verification levels (mapped to the V)
+
+| Level | Question | Activities | Where |
+|-------|----------|------------|-------|
+| **L4 Unit/Component** | Does each part work in isolation? | `pytest hub/tests`; `pio test`; detection eval harness; HMAC/codec test vectors. | per-module |
+| **L3 Subsystem Integration** | Do parts work across the ICD seams? | capture→detection→reasoning→state; state→alarm; state→comms→node loopback; voice loop w/ mocked vision. | `hub/tests/integration/`, bench |
+| **L2 System Verification** | Does the assembled system meet the SRD/TPMs? | full hub on Jetson; measure FPS/latency/false-pos/neg, LoRa range, offline-detect, battery runtimes. | on-target |
+| **L1 Validation** | Does it satisfy the ConOps in the field? | scripted drills OS-1..8, incl. pull-network-then-mains. | field |
+
+## 2. Verification methods per requirement type
+- **Inspection (I):** read code/config/enclosure against the spec (e.g. SE-1 — confirm no force interface exists).
+- **Analysis (A):** model/compute (e.g. RR-2 availability from MTBF/MTTR; PR-4 from eval set + duty cycle).
+- **Demonstration (D):** show the behavior once under nominal conditions (e.g. FR-11 voice responds to vision).
+- **Test (T):** measured, repeatable, pass/fail against a threshold (e.g. PR-1 ≥15 FPS; PR-6 ≥200 m).
+
+## 3. Technical Performance Measures (TPM) {#tpm}
+
+Thresholds are the requirement; goals are stretch; "current" is updated as measured on-target.
+
+| ID | Measure | Threshold | Goal | Method | Current |
+|----|---------|-----------|------|--------|---------|
+| TPM-1 | Stage-1 throughput @1080p (Orin NX) | ≥15 FPS | ≥25 | T | — |
+| TPM-2 | Threat-confirm latency | ≤2 s | ≤1 s | T | — |
+| TPM-3 | Local / mesh alarm latency | ≤1 s / ≤3 s | ≤0.5 / ≤1.5 s | T | — |
+| TPM-4 | False-positive rate | ≤1/30 d | ≈0 | A/T | — |
+| TPM-5 | False-negative rate (benchmark) | ≤5% | ≤2% | T | — |
+| TPM-6 | LoRa range through structure | ≥200 m | ≥500 m | T | — |
+| TPM-7 | Node-offline detection | ≤30 s | ≤10 s | T | — |
+| TPM-8 | Node battery standby / siren | ≥24 h / ≥10 min | ≥72 h / ≥30 min | T | — |
+| TPM-9 | Hub battery runtime | ≥4 h | ≥8 h | T | — |
+| TPM-10 | Voice first-audio latency | ≤2 s | ≤1 s | T | — |
+
+## 4. Requirements Traceability Matrix (RTM)
+
+Status: ☐ not started · ◐ in progress · ☑ verified. Keep current — a PR that satisfies a requirement flips
+its status and names the evidence (test id / drill / inspection note).
+
+| Req | Method | V-Level | Verification activity | M# | Status |
+|-----|--------|---------|-----------------------|----|--------|
+| FR-1 | D | L2 | Boot + hotplug a webcam; pipeline auto-binds. | M1 | ◐ `test_capture` (reconnect logic); hotplug demo pending Jetson+webcam |
+| FR-2 | D | L2 | Kill service; watchdog restarts; pipeline resumes. | M1 | ◐ capture resume unit-tested; watchdog restart demo pending hardware |
+| FR-3 | T | L4 | `eval_detection.py` precision/recall on labeled set; track-ID continuity test. | M1 | ◐ `test_tracking` continuity + `test_eval_detection` metrics ☑; P/R gate needs labeled benchmark |
+| FR-4 | T | L4 | Feed known frames; assert schema-valid JSON + correct armed/intent. | M2 | ☑ `test_assessor` (parse/validate/retry/fallback, no zone/ts spoof) |
+| FR-5 | T | L4 | State-machine unit tests: hysteresis, confirmation, cooldown, panic. | M1 | ☑ `test_state_machine` + `test_pipeline` |
+| FR-6 | T | L3 | ALARM entry asserts siren+strobe GPIO/audio. | M2 | ◐ `test_alarm` latch + `test_pipeline` ALARM-entry actuation via fake sink ☑; real GPIO/audio bench pending |
+| FR-7 | T | L3 | ALARM → signed LoRa broadcast → node siren fires (bench). | M3 | ◐ `test_mesh_gateway` signed broadcast + shared-counter repeats ☑; ALARM→mesh wired in `Hub._actuate` (gated `comms.enabled`); node-siren bench pending hardware |
+| FR-8 | T | L3 | Node ACKs; hub marks online; kill node → marked offline. | M3 | ◐ `test_mesh_gateway` ACK-gated retry + node-health table + offline-flag ☑; on-target ACK bench pending |
+| FR-9 | T | L3 | Heartbeat loss → hub alert; isolated node → local alert. | M3/M4 | ◐ hub heartbeat cadence + offline-after-misses unit-tested ☑; node fail-safe implemented (firmware); bench pending |
+| FR-10 | T | L2 | Pull node mains; `STATUS.on_battery` true at hub. | M4 | ☐ |
+| FR-11 | D | L3 | Speak; reply changes with injected vision context. | M5 | ☐ |
+| FR-12 | D | L2 | During voice dialogue, alarm + notify still fire. | M5 | ☐ |
+| FR-13 | D | L2 | Offline → notification queues; reconnect → flushes. | M6 | ☐ |
+| FR-14 | D | L2 | Panic forces ALARM from each mode; test mode no-latch; per-zone arm. | M4/M6 | ☐ |
+| FR-15 | I | L2 | Inspect event log: ts, keyframe, assessment, actions present. | M2 | ◐ `test_event_log` ts/zone/level/assessment/actions persisted ☑; keyframe-ref persistence pending |
+| FR-16 | D | L2 | Threat in zone A, benign in zone B; correct attribution. | M6 | ☐ |
+| PR-1 | T | L2 | Measure FPS on Orin NX @1080p ≥15. | M1 | ☐ deferred to on-Jetson bench |
+| PR-2 | T | L2 | Measure first-qualifying-frame→confirm ≤2 s. | M2 | ◐ confirmation-window logic verified (`test_pipeline`); wall-clock latency deferred to on-Jetson bench |
+| PR-3 | T | L2 | Measure confirm→local ≤1 s, confirm→mesh ≤3 s. | M2/M3 | ◐ mesh broadcast path wired + `bench_lora` ping/echo RTT harness ready; wall-clock measurement deferred to on-target bench |
+| PR-4 | A/T | L2 | Benign suite ≈0 false alarms; 30-day duty-cycle analysis ≤1. | M2 | ☐ |
+| PR-5 | T | L2 | Weapon-present benchmark false-negative ≤5%. | M2 | ☐ |
+| PR-6 | T | L2 | Range walk-test through structure ≥200 m. | M3 | ☐ deferred to on-hardware range walk-test |
+| PR-7 | T | L2 | Time from node-kill to hub-offline-flag ≤30 s. | M3 | ◐ offline-detection logic verified (`test_node_goes_offline_after_missed_heartbeats`, deadline = hb_interval×hb_miss_max ≤30 s); wall-clock on-target pending |
+| PR-8 | T | L2 | Measure subject-stop→reply-audio ≤2 s. | M5 | ☐ |
+| IR-1..4 | I/T | L3 | Inspect each seam against ICD-1..7; codec round-trip tests. | M0–M3 | ◐ IR-2 (ICD-2 transport) COBS/CRC round-trip + corruption ☑; IR-3 (ICD-3 air) payload codec round-trips ☑; IR-4 scaffolded |
+| RR-1 | T | L2 | Crash/hang injection → auto-restart. | M4 | ☐ |
+| RR-2 | A | L2 | Availability computed from MTBF/MTTR ≥99.9%. | M4 | ☐ |
+| RR-3 | T | L2 | Battery-runtime measurement hub/node. | M4 | ☐ |
+| RR-4 | T | L3 | Inject camera/VLM/mesh failures → graceful DEGRADED. | M4 | ☐ |
+| RR-5 | A/T | L3 | Kill one node → mesh + hub unaffected. | M3/M4 | ◐ per-source node-health isolation unit-tested (one node offline doesn't perturb others); multi-node bench pending |
+| SR-1 | T | L4 | HMAC test vectors; replayed counter rejected. | M3 | ◐ forged-HMAC drop + replayed-counter reject unit-tested (`test_mesh_gateway`); protocol codec + ReplayWindow tested in M0; node-side replay window mirrors protocol.py |
+| SR-2 | T | L3 | Jam/tamper → alert. | M3/M4 | ◐ hub offline-flag on heartbeat silence + node hub-timeout fail-safe implemented ☑; physical jam/tamper bench pending |
+| SR-3 | I | L3 | Inspect key storage/provisioning; no secret in repo. | M3 | ☐ |
+| SR-4 | A | L2 | Attack-surface review of critical path. | M2 | ☐ |
+| SE-1 | I | all | Inspect: no interface to any physical-force mechanism. | all | ◐ (architectural) |
+| SE-2 | I/D | L3 | Inspect guardrails + log; demo refusal of illegal content. | M5 | ☐ |
+| SE-3 | A | L2 | Bias eval across demographic slices on the benchmark. | M2 | ☐ |
+| SE-4 | I | L2 | Inspect on-device processing + retention/consent config. | M2 | ☐ |
+| SE-5 | D | L2 | Authority-contact path requires human confirm. | M6 | ☐ |
+| ER-1 | I | L3 | Inspect enclosure IP rating + temp spec. | M4 | ☐ |
+| ER-2 | D | L2 | Night/low-light detection demo. | M1 | ☐ |
+
+## 5. Validation drills (L1, against the ConOps OS-1..8)
+
+Each drill has a script, expected outcome, and a recorded result. Run on-target with real hardware.
+
+| Drill | Setup | Pass criteria |
+|-------|-------|---------------|
+| OS-1 Nominal | Armed, empty scene, long run | 0 false alarms; stable resources |
+| OS-2 Benign visitor | Person approaches w/o weapon, leaves | No major alarm, no mesh trigger |
+| OS-3 Armed approach | Staged weapon display approach | ALARM within budget; siren+mesh+voice+notify; full log |
+| OS-4 Mains cut | Pull hub & node mains mid-drill | Continue on battery; `on_battery` reported |
+| OS-5 Internet cut | Disconnect WAN | Local chain works; notify queues+flushes |
+| OS-6 Jam/tamper | Kill/unplug a node | Hub offline-alert ≤30 s; isolated node fails safe |
+| OS-7 Multi-zone | Threat zone A, benign zone B | Correct attribution; no cross-talk |
+| OS-8 Test+panic | Run test mode; hit panic | Test no-latch; panic forces ALARM |
+
+**Acceptance for v1** = all RTM rows ☑ **and** all OS drills pass, culminating in the end-to-end OS-3 drill
+with network then mains pulled.
+
+## 6. CI gates
+- PR: `ruff`, `ruff format --check`, `mypy` (typed modules), `pytest`, `pio test` (firmware) must pass.
+- Detection eval (PR-4/PR-5) runs on the benchmark set and must not regress beyond tolerance.

@@ -1,0 +1,73 @@
+# AutoSentry hub configuration.
+# All thresholds are tunable here without touching code (FR-5, FR-16).
+# Secrets (e.g. the mesh HMAC key) are NOT stored here — see comms.key_env and docs/SECURITY.md.
+
+armed: false  # start DISARMED; arm explicitly after self-tests pass (OS-8)
+
+capture:
+  sources: ["0"]        # webcam index, /dev/video path, or rtsp:// URL — one per zone
+  zones: ["front"]
+  width: 1920
+  height: 1080
+  fps: 15
+  timeout_s: 5.0
+
+detection:
+  model: "yolov8n.pt"
+  weapon_model: null     # path to fine-tuned weapon-detection weights (docs/VISION_PIPELINE.md)
+  conf_person: 0.4
+  conf_weapon: 0.5
+  device: "auto"
+
+trigger:
+  loiter_s: 20.0
+  approach_px_s: 120.0
+  restricted_zones: []
+  restricted_hours: []
+
+reasoning:
+  backend: "ollama"
+  model: "qwen2-vl:2b"
+  endpoint: "http://127.0.0.1:11434"
+  timeout_s: 4.0
+  keyframes: 3
+
+state:
+  watch_timeout_s: 30.0
+  arm_confidence: 0.6
+  confirmation_window_s: 1.5
+  cooldown_s: 60.0
+
+alarm:
+  siren_gpio: null
+  strobe_gpio: null
+  audio_device: null
+  latch: true
+
+comms:
+  port: "/dev/ttyUSB0"
+  baud: 115200
+  net_id: 1
+  hub_addr: 0
+  hb_interval_s: 5.0
+  hb_miss_max: 3
+  retries: 3
+  broadcast_repeats: 3
+  key_env: "AUTOSENTRY_MESH_KEY"
+
+voice:
+  enabled: true
+  stt_model: "small"
+  llm_model: "qwen2.5:3b"
+  llm_endpoint: "http://127.0.0.1:11434"
+  tts_voice: "en_US-amy-medium"
+  max_reply_tokens: 80
+  turn_timeout_s: 3.0
+
+notify:
+  enabled: false
+  endpoint: null
+  queue_path: "events.db"
+
+watchdog:
+  sw_timeout_s: 10.0
