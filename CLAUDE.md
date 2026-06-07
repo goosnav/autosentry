@@ -54,6 +54,7 @@ hub/         Jetson Python package `autosentry`
   comms/       LoRa gateway (serial) + mesh protocol   [ICD-2/3, FR-7..10]
   voice/       STT → LLM → TTS de-escalation           [FR-11/12]
   notify/      owner push (non-critical path)          [FR-13]
+  dashboard/   local operator web UI (non-critical)    [FR-17]
   contracts.py typed data models shared across modules [ICD-7]
   config.py    pydantic settings + config.yaml
   app.py       supervised main loop
@@ -109,12 +110,16 @@ build for the current milestone, not imagined ones.
 ## 6. How to run & verify each subsystem
 
 ```bash
+# First-time setup: fetch the local AI models (FR-18). Idempotent; also runs automatically
+# on first `autosentry.app` boot when models.auto_download is on. Needs Ollama running.
+python scripts/download_models.py             # YOLO + VLM + voice STT/LLM/TTS into models/
+
 # Unit / component (L4)
 cd hub && pytest                              # state machine, contracts, HMAC vectors, codecs
 cd firmware/alarm_node && pio test            # node firmware units
 
 # Subsystem & system (L3/L2)
-python -m autosentry.app --source 0           # live webcam
+python -m autosentry.app --source 0           # live webcam (auto-provisions models if missing)
 python -m autosentry.app --source clip.mp4    # recorded scenario
 python scripts/eval_detection.py --set bench/ # detection precision/recall (PR-4/PR-5)
 python scripts/bench_lora.py --port /dev/ttyUSB0   # hub<->node loopback (PR-6/PR-7)

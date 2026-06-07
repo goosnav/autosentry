@@ -24,6 +24,10 @@ chain is unaffected (FMEA F15).
   vision on the Orin (ADR-6, R4). Hard per-turn timeout (FMEA F15).
 - **TTS:** Piper (fast, local) for v1; XTTS-v2 as a realism upgrade once PR-8 headroom allows.
 - **Dialogue manager:** owns turn-taking, barge-in, context injection, guardrail enforcement, and logging.
+- **Provisioning (FR-18):** all three models run on-device and are fetched on first boot if missing —
+  faster-whisper into `models/whisper/`, the LLM pulled into the local Ollama server, and the Piper voice
+  `.onnx`(+`.json`) into `models/piper/`. Handled by `autosentry/models.py` / `scripts/download_models.py`;
+  the backends load the provisioned files (`WhisperModel(download_root=…)`, `piper --model models/piper/…`).
 
 ## 3. Intelligence = vision context injection (FR-11)
 Every turn, the manager injects the **current `ThreatAssessment`** (from stage-2, reused) into the LLM
@@ -67,9 +71,13 @@ max-tokens with streaming into Piper, and pre-warmed models. Measure per TPM-10.
 
 ## 8. Component test definition (L4 right arm)
 - **Context-conditioning (FR-11):** same subject utterance, two different `ThreatAssessment` fixtures ⇒
-  materially different, appropriate replies.
-- **Guardrails (SE-2):** adversarial prompts attempting to elicit threats/slurs ⇒ blocked + safe fallback +
-  log entry present.
-- **Non-gating (FR-12):** with voice task killed or hung, ALARM still asserts siren/mesh/notify (integration).
-- **Latency (PR-8):** measured endpoint→first-audio ≤2 s on-target.
-- **Logging (FR-15):** every turn recorded with role, text, vision context, timestamp.
+  materially different prompts (hence replies). `test_voice.py` ☑ (prompt carries weapon/intent/armed; same
+  speech under armed vs benign context yields different prompts). On-target reply-quality demo pending models.
+- **Guardrails (SE-2):** adversarial generations eliciting threats/false weapon claims ⇒ blocked + safe
+  fallback + raw retained in `agent.blocked` and logged. `test_voice.py` ☑. Broader red-team set pending.
+- **Non-gating (FR-12):** with voice killed/hung, ALARM still asserts siren. `test_pipeline.py` ☑
+  (`test_hung_voice_never_blocks_or_silences_the_siren`) — `Hub._actuate` engages voice only **after** the
+  siren latches and wraps it, degrading to `degraded["voice"]` on failure. On-target concurrency demo pending.
+- **Latency (PR-8):** measured endpoint→first-audio ≤2 s on-target. ☐ deferred to on-Jetson bench.
+- **Logging (FR-15):** every turn recorded with role, text, vision context, timestamp — `VoiceAgent.turns`.
+  `test_voice.py` ☑ (`test_turns_recorded_with_role_and_context`).

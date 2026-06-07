@@ -50,6 +50,20 @@ def test_event_without_assessment_stores_null():
     assert json.loads(row["actions"]) == []
 
 
+def test_event_records_keyframe_paths():
+    n = _notifier()
+    n.log_event(_state(Level.ALARM, 3.0), _assessment(3.0), ["local_alarm"],
+                ["keyframes/front-7-3.000.jpg"])
+    row = n.events()[0]
+    assert json.loads(row["keyframes"]) == ["keyframes/front-7-3.000.jpg"]
+
+
+def test_keyframes_default_to_empty_list():
+    n = _notifier()
+    n.log_event(_state(Level.WATCH, 1.0), None, [])
+    assert json.loads(n.events()[0]["keyframes"]) == []
+
+
 def test_events_are_ordered():
     n = _notifier()
     n.log_event(_state(Level.WATCH, 1.0), None, [])

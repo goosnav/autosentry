@@ -61,8 +61,12 @@ files = [
     "autosentry/detection/detector.py",
     "autosentry/capture/source.py",
     "autosentry/reasoning/assessor.py",
+    "autosentry/voice/agent.py",
     "autosentry/alarm/controller.py",
     "autosentry/notify/notifier.py",
+    "autosentry/notify/keyframes.py",
+    "autosentry/dashboard/service.py",
+    "autosentry/models.py",
     "autosentry/watchdog.py",
     "autosentry/app.py",
 ]

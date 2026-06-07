@@ -68,6 +68,19 @@ notify:
   enabled: false
   endpoint: null
   queue_path: "events.db"
+  keyframe_dir: "keyframes"  # triggering-frame images for the audit log (FR-15); git-ignored
 
 watchdog:
   sw_timeout_s: 10.0
+
+dashboard:
+  enabled: false       # opt-in local operator UI (FR-17); never on the critical path
+  host: "127.0.0.1"    # loopback only — not exposed to the network
+  port: 8088
+  event_limit: 50
+
+models:
+  auto_download: true  # fetch any missing model on startup (FR-18); runs offline after
+  dir: "models"        # local weight cache (git-ignored); single source of truth for paths
+  yolo_assets_base: "https://github.com/ultralytics/assets/releases/download/v8.3.0"
+  piper_voices_base: "https://huggingface.co/rhasspy/piper-voices/resolve/main"

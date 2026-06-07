@@ -156,3 +156,31 @@ class VoiceTurn:
     text: str
     vision_context: ThreatAssessment | None
     ts: float
+
+
+@dataclass
+class Notification:
+    """Owner push payload (ICD-6, FR-13). Best-effort, never in the alarm critical path."""
+
+    event_id: int
+    zone: str
+    ts: float
+    threat_level: str
+    assessment_summary: str
+    keyframe_ref: str | None = None
+
+
+@dataclass
+class AuthorityRecommendation:
+    """A recommendation to contact authorities, gated on human confirmation (SE-5).
+
+    AutoSentry never auto-contacts emergency services in v1; this record is surfaced to the
+    owner and only `confirmed` by an explicit human action — keeping a human in the loop on
+    the highest-consequence, non-recoverable escalation (docs/SAFETY_ETHICS_LEGAL.md §6).
+    """
+
+    zone: str
+    threat_level: str
+    reason: str
+    ts: float
+    confirmed: bool = False

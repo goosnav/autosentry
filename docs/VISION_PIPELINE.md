@@ -79,6 +79,17 @@ confirmation window** so a single frame can't trip a major alarm (PR-4).
 IR illuminator + IR-capable sensor; the pipeline is illumination-agnostic (works on IR frames). Include
 night samples in every benchmark stratum.
 
+## 8b. Model provisioning (FR-18)
+Both stages run **on-device** (pillars 1 + 4). Weights are not committed (git-ignored); the box
+self-provisions on first boot. `autosentry/models.py` enumerates what the active config needs — the
+stage-1 YOLO weight (`detection.model`, optional `weapon_model`) into `models/`, and the stage-2 VLM
+(`reasoning.model`) into the local Ollama server — checks presence, and fetches only what's missing.
+`Hub.run()` calls this once before the camera loop (never on the hot path), and
+`scripts/download_models.py` is the explicit CLI (`--list`, `--force`). After provisioning, model
+loading needs no network. `YoloBackend` loads `models/<weight>` when present, else falls back to the
+bare name so Ultralytics can still auto-fetch. Set `models.auto_download: false` for air-gapped boxes
+provisioned out-of-band.
+
 ## 9. Component test definition (L4 right arm)
 - `detection` unit tests: known images → expected classes/boxes within IoU tolerance; **track-ID continuity**
   across a synthetic sequence (FR-3).

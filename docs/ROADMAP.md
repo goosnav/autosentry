@@ -60,9 +60,9 @@ voice killed; first-audio ≤2 s.
 
 ## M6 — Multi-cam + notifications + dashboard
 **Goal:** scale to a real site and close the owner loop.
-- `notify/` (owner push, offline queue/flush), multi-camera/zones, local web dashboard, authority-contact
-  recommendation with human confirm.
-**Verifies:** FR-13, FR-16, SE-5; revisits PR-4 multi-zone.
+- `notify/` (owner push, offline queue/flush), multi-camera/zones, local web dashboard (`dashboard/`,
+  opt-in, off the critical path), authority-contact recommendation with human confirm.
+**Verifies:** FR-13, FR-16, FR-17, SE-5; revisits PR-4 multi-zone.
 **Exit:** OS-5 + OS-7 drills pass; SE-5 human-confirm demonstrated.
 
 ---

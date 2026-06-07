@@ -56,12 +56,14 @@ its status and names the evidence (test id / drill / inspection note).
 | FR-8 | T | L3 | Node ACKs; hub marks online; kill node → marked offline. | M3 | ◐ `test_mesh_gateway` ACK-gated retry + node-health table + offline-flag ☑; on-target ACK bench pending |
 | FR-9 | T | L3 | Heartbeat loss → hub alert; isolated node → local alert. | M3/M4 | ◐ hub heartbeat cadence + offline-after-misses unit-tested ☑; node fail-safe implemented (firmware); bench pending |
 | FR-10 | T | L2 | Pull node mains; `STATUS.on_battery` true at hub. | M4 | ◐ `test_mesh_gateway` STATUS→on_battery surfaced while online ☑; `test_reliability` Hub.power_alerts/health surface offline+on-battery ☑; firmware reports STATUS w/ on_battery; real INA219 mains-sense bench pending |
-| FR-11 | D | L3 | Speak; reply changes with injected vision context. | M5 | ☐ |
-| FR-12 | D | L2 | During voice dialogue, alarm + notify still fire. | M5 | ☐ |
-| FR-13 | D | L2 | Offline → notification queues; reconnect → flushes. | M6 | ☐ |
-| FR-14 | D | L2 | Panic forces ALARM from each mode; test mode no-latch; per-zone arm. | M4/M6 | ◐ `test_reliability` panic-forces-ALARM-when-disarmed, test-mode-pulses-no-latch, disarmed-reaches-ALARM-but-silent, armed-fires-siren ☑; operator UI deferred to M6 |
-| FR-15 | I | L2 | Inspect event log: ts, keyframe, assessment, actions present. | M2 | ◐ `test_event_log` ts/zone/level/assessment/actions persisted ☑; keyframe-ref persistence pending |
-| FR-16 | D | L2 | Threat in zone A, benign in zone B; correct attribution. | M6 | ☐ |
+| FR-11 | D | L3 | Speak; reply changes with injected vision context. | M5 | ◐ `test_voice` prompt-carries-vision-context + same-speech-different-context-changes-prompt ☑; on-target live STT→LLM→TTS demo pending models |
+| FR-12 | D | L2 | During voice dialogue, alarm + notify still fire. | M5 | ◐ `test_pipeline` hung-voice-never-blocks-or-silences-siren + voice-engages-on-ALARM ☑ (voice engaged after siren latch in `_actuate`, failure → DEGRADED); on-target concurrent demo pending |
+| FR-13 | D | L2 | Offline → notification queues; reconnect → flushes. | M6 | ◐ `test_notify` durable outbox: delivers online, queues offline, flushes oldest-first on reconnect, stops-on-failure without dropping ☑; `test_multizone` ALARM enqueues a push without gating ☑; live push-provider demo pending |
+| FR-14 | D | L2 | Panic forces ALARM from each mode; test mode no-latch; per-zone arm. | M4/M6 | ◐ `test_reliability` panic-forces-ALARM-when-disarmed, test-mode-pulses-no-latch, disarmed-reaches-ALARM-but-silent, armed-fires-siren ☑; `test_dashboard` operator UI exposes arm/disarm, panic, test-mode routing to the Hub ☑ |
+| FR-15 | I | L2 | Inspect event log: ts, keyframe, assessment, actions present. | M2 | ◐ `test_event_log` ts/zone/level/assessment/actions + keyframe paths persisted ☑; `test_pipeline` captures the triggering frame to disk and records its path, and a failing encode degrades to no-keyframe without breaking the pipeline (pillar 1) ☑; on-target image-quality review pending |
+| FR-16 | D | L2 | Threat in zone A, benign in zone B; correct attribution. | M6 | ◐ `test_multizone` armed rifle at "front" escalates to ALARM while empty "back" stays NORMAL, ALARM attributed to the right zone, per-zone detectors + state machines proven independent ☑; on-target multi-camera demo pending |
+| FR-17 | D | L2 | Dashboard shows per-zone state/health, exposes FR-14 controls + SE-5 confirm, off the critical path. | M6 | ◐ `test_dashboard` status reflects per-zone level/arming/health + pending queues, system-level rollup (max across zones), latest stage-2 assessment per zone, mesh node-health (offline/on-battery), controls route to Hub, unknown-zone rejected, events newest-first ☑ (12 tests); HTTP adapter serves an enriched single-page UI (system banner, per-zone assessment, node table, arm-all/disarm-all) + JSON API, POST controls, 400 on bad input, clean shutdown; on-target browser demo pending |
+| FR-18 | D | L2 | Missing models fetched on startup; present ones skipped; loads offline thereafter. | M6 | ◐ `test_models` present-not-refetched, missing-fetched, auto_download-off reports-without-fetching, force-refetch, voice-disabled drops voice targets, one-failure-isolated ☑; backends resolve provisioned weights under `models/`; `scripts/download_models.py --list` enumerates all 5 models; provisioning runs at `Hub.run()` boot, off the hot path; on-target live fetch (YOLO/Ollama/whisper/piper) pending |
 | PR-1 | T | L2 | Measure FPS on Orin NX @1080p ≥15. | M1 | ☐ deferred to on-Jetson bench |
 | PR-2 | T | L2 | Measure first-qualifying-frame→confirm ≤2 s. | M2 | ◐ confirmation-window logic verified (`test_pipeline`); wall-clock latency deferred to on-Jetson bench |
 | PR-3 | T | L2 | Measure confirm→local ≤1 s, confirm→mesh ≤3 s. | M2/M3 | ◐ mesh broadcast path wired + `bench_lora` ping/echo RTT harness ready; wall-clock measurement deferred to on-target bench |
@@ -81,10 +83,10 @@ its status and names the evidence (test id / drill / inspection note).
 | SR-3 | I | L3 | Inspect key storage/provisioning; no secret in repo. | M3 | ☐ |
 | SR-4 | A | L2 | Attack-surface review of critical path. | M2 | ☐ |
 | SE-1 | I | all | Inspect: no interface to any physical-force mechanism. | all | ◐ (architectural) |
-| SE-2 | I/D | L3 | Inspect guardrails + log; demo refusal of illegal content. | M5 | ☐ |
+| SE-2 | I/D | L3 | Inspect guardrails + log; demo refusal of illegal content. | M5 | ◐ `test_voice` guardrail blocks threat-of-force + false-weapon-claim → safe fallback, raw retained in `agent.blocked` + logged ☑; persona system-prompt inspected; adversarial red-team set pending |
 | SE-3 | A | L2 | Bias eval across demographic slices on the benchmark. | M2 | ☐ |
 | SE-4 | I | L2 | Inspect on-device processing + retention/consent config. | M2 | ☐ |
-| SE-5 | D | L2 | Authority-contact path requires human confirm. | M6 | ☐ |
+| SE-5 | D | L2 | Authority-contact path requires human confirm. | M6 | ◐ `test_multizone` ALARM only *recommends* authority contact (`pending_authority` rec, `confirmed is False`, `authority_recommended` in event actions) — never auto-confirms; `confirm_authority_contact` is the sole path to `confirmed=True` ☑; `test_dashboard` confirm-authority is human-only, confirms the right rec, rejects out-of-range ☑ |
 | ER-1 | I | L3 | Inspect enclosure IP rating + temp spec. | M4 | ☐ deferred to hardware enclosure inspection (≥IP65) |
 | ER-2 | D | L2 | Night/low-light detection demo. | M1 | ☐ |
 
