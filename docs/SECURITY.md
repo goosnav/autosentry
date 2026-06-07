@@ -55,6 +55,34 @@ A security product that can be trivially disabled is worse than none — it give
 These are recorded in [RISK_REGISTER.md](RISK_REGISTER.md) with owners.
 
 ## 6. Verification
-SR-1 by HMAC/replay test vectors (L4) + bench (L3); SR-2/PR-7 by OS-6 jam/tamper drill; SR-3 by inspection;
-SR-4 by an attack-surface review of the critical path. See
+SR-1 by HMAC/replay test vectors (L4) + bench (L3); SR-2/PR-7 by OS-6 jam/tamper drill. SR-3 (inspection) and
+SR-4 (analysis) are performed below and pinned as regression tests in `hub/tests/test_security.py`. See
 [VERIFICATION_AND_VALIDATION.md](VERIFICATION_AND_VALIDATION.md).
+
+### 6.1 SR-3 — secret-hygiene inspection (performed 2026-06-07)
+- The mesh HMAC key is read from `os.environ[CommsConfig.key_env]` (`AUTOSENTRY_MESH_KEY`) in
+  `MeshGateway._get_key()`; absent the env var it **raises** — there is no committed default and no silent
+  fallback. ✔
+- No config model carries key material: `CommsConfig` exposes only `key_env` (the env-var *name*), and
+  `config.yaml` references that name with no `key:` value assignment. ✔
+- `.gitignore` excludes `.env`, `.env.*`, `*.key`, `*.pem`, `secrets/`, and `node_keys.yaml`; no
+  secret-named file is tracked and no assigned key value appears in any tracked file
+  (`git ls-files` + `git grep`). ✔
+- **Result: PASS.** Node provisioning distributes the shared secret out-of-band at flash time
+  (COMMS_PROTOCOL.md); nothing secret lives in the repo.
+
+### 6.2 SR-4 — critical-path attack-surface analysis (performed 2026-06-07)
+- **Critical path** = `capture → detection → reasoning → state → alarm → comms`. A scan of those packages
+  finds **no inbound network listener** (no `HTTPServer`/`serve_forever`/`socketserver`/socket `bind`); the
+  radio link is a local serial transport and every inbound LoRa frame is HMAC- + counter-checked before any
+  action (forged/replayed frames are dropped, SR-1). ✔
+- **Inbound surfaces, all off the critical path:** the operator dashboard (`dashboard/server.py`) is the only
+  inbound listener — opt-in (`dashboard.enabled=false`), loopback-bound (`127.0.0.1`) by default, started
+  after the pipeline and torn down on shutdown (FR-17, pillar 1). The systemd watchdog uses an *outbound*
+  AF_UNIX `connect` to `sd_notify`, not a listener.
+- **Outbound surfaces** are all either on-device or owner-directed and off-path: stage-2 VLM and voice LLM
+  hit **localhost** Ollama (`127.0.0.1:11434`); model provisioning fetches weights once at boot then runs
+  offline (FR-18); owner push (`notify/sender.py`) is opt-in and posts event *metadata only* (zone, level,
+  summary — no image/recording bytes) to the owner's own endpoint (FR-13, ICD-6).
+- **Result: PASS.** No remote attack surface sits on the detection→alarm path; disabling the network cannot
+  silence detection or alarm (degrades loudly, pillar 1).
