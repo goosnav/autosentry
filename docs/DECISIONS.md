@@ -103,8 +103,73 @@ injecting live vision context into the LLM prompt, not from canned lines.
 
 ---
 
+## ADR-7 — Local operator dashboard: local web UI (loopback-bound)
+*Status: Accepted · 2026-06-07*
+
+**Context:** M6 needs an operator surface to show per-zone threat state, recent events, node/health status,
+and the FR-14 controls (arm/disarm, panic, test mode) plus the SE-5 authority-contact confirmation
+(REQUIREMENTS §FR-17). The dashboard is non-critical (pillar 1) and must not sit on the detection→alarm
+path.
+
+**Options:** (a) local web UI served by the hub, (b) minimal text status (logs only) plus a CLI,
+(c) require an external always-on host to run the UI.
+
+**Decision:** **Local web UI** served by the hub, opt-in (`dashboard.enabled=false` by default), bound
+to loopback (`127.0.0.1`) so it's not reachable from the LAN without explicit operator opt-in. Implemented
+in `hub/autosentry/dashboard/server.py` (HTTP) + `hub/autosentry/dashboard/service.py` (Hub projection);
+exposed as a single-page UI + JSON API, with POST controls (arm-all/disarm-all/panic/test-mode/confirm-
+authority) that route to the Hub. A failure to start the dashboard degrades to `degraded["dashboard"]`
+and the pipeline runs headless — never gates the critical path (FR-17, SR-4).
+
+**Consequences:** security review (SR-4) recorded the dashboard as the only inbound network listener; it
+is off-path and loopback-bound. Pinned by `test_security` and the SR-4 inspection in
+[SECURITY.md §6.2](SECURITY.md). Reconsider if/when richer multi-user/fleet features are added (post-v1).
+
+## ADR-8 — Notification transport: provider-agnostic HTTPS sender
+*Status: Accepted · 2026-06-07*
+
+**Context:** FR-13 requires owner notifications on a confirmed threat, queued offline and flushed on
+reconnect (ConOps OS-5). v1 is a single-owner product; no multi-tenant / fleet needs yet.
+
+**Options:** (a) hard-bind to a single commercial push provider, (b) provider-agnostic outbound HTTPS
+sender with the owner configuring the endpoint, (c) self-hosted webhook only, (d) no notifications (in-app
+only).
+
+**Decision:** **Provider-agnostic HTTPS sender** (`hub/autosentry/notify/sender.py`) — the owner configures
+their endpoint (commercial provider or self-hosted). Payload is event **metadata only** (event id, zone,
+timestamp, threat level, assessment summary, keyframe path) per ICD-6; **no image bytes, no biometric data,
+no telemetry** (SE-4). The notifier wraps a durable SQLite outbox that delivers online, queues offline,
+flushes oldest-first on reconnect, and stops on failure without dropping (verified by `test_notify`).
+
+**Consequences:** owner install docs need a one-page "configure your push endpoint" guide (planned under
+HARDWARE/install). No third-party SDK dependency; no telemetry. If/when professional monitoring-center
+integration is added post-v1, revisit the schema to carry the centre's required fields — and re-pass the
+five pillars (ADR-4).
+
+## ADR-9 — Weapon-detection dataset/model sourcing & fine-tuning approach
+*Status: Open · to record when the labeled benchmark lands*
+
+**Context:** PR-4 (FP rate), PR-5 (weapon FN ≤5%), and SE-3 (bias slices) are gated by the **same**
+labeled benchmark. The dataset determines the ceiling of every one of these requirements.
+
+**Open question:** sourcing strategy (open datasets only vs open + collected/augmented site data), fine-
+tuning vs out-of-the-box YOLO, hard-negative mining protocol, and stratification. See the Benchmark Dataset
+SOW in [VERIFICATION_AND_VALIDATION.md](VERIFICATION_AND_VALIDATION.md) (added in the v1 verification
+rework). **Close this ADR when the SOW is implemented and the dataset is committed under `bench/`.**
+
+## ADR-10 — Multi-hub coordination for larger sites
+*Status: Post-v1 · recorded 2026-06-07*
+
+**Context:** R10 (hub SPOF) and the post-v1 roadmap ([ROADMAP.md](ROADMAP.md) "Post-v1") call out multi-hub
+for properties too large or too partitioned for a single hub. This is a meaningful design exercise (mesh
+topology changes from star to a graph; heartbeat/fail-safe semantics shift; dashboard becomes multi-hub).
+
+**Decision:** Defer to post-v1. v1's star topology + per-node fail-safe is sufficient for a single-hub
+property ([ROADMAP.md](ROADMAP.md) v1 acceptance). Reopen the ADR if/when a real site requires it; the
+five pillars must still pass (ADR-4, ADR-5).
+
+---
+
 ## Open decisions (to record when made)
-- ADR-7 — Local web dashboard vs minimal status UI (M6).
-- ADR-8 — Notification transport (self-hosted vs provider) (M6).
-- ADR-9 — Weapon-detection dataset/model sourcing & fine-tuning approach (M1/M2; see VISION_PIPELINE.md).
-- ADR-10 — Multi-hub coordination for larger sites (post-v1).
+- ADR-9 — Weapon-detection dataset/model sourcing & fine-tuning approach. Gates PR-4, PR-5, SE-3. See the
+  Benchmark Dataset SOW in [VERIFICATION_AND_VALIDATION.md](VERIFICATION_AND_VALIDATION.md).

@@ -73,11 +73,25 @@ confirmation window** so a single frame can't trip a major alarm (PR-4).
   per-condition **precision/recall**, the **false-negative rate** (PR-5, weapon-present), and a
   **false-positive** proxy on the benign suite (PR-4 / OS-2).
 - **Gate:** CI fails if FN-rate >5% or the benign suite produces a major-alarm trigger, or if either
-  regresses beyond tolerance vs the last baseline.
+  regresses beyond tolerance vs the last baseline. The gate is a pure function `check_gates()` in
+  `eval_detection.py` (PR-5 uses the **weapon-only** false-negative rate via `weapon_fn_rate()`, so person
+  misses never mask a missed weapon); it is unit-tested (`test_eval_detection.py`) and shared by CI so the
+  pass/fail decision has one source of truth. Only dataset loading awaits the labeled benchmark.
 
 ## 8. Night / low-light (ER-2)
 IR illuminator + IR-capable sensor; the pipeline is illumination-agnostic (works on IR frames). Include
 night samples in every benchmark stratum.
+
+## 8b. Model provisioning (FR-18)
+Both stages run **on-device** (pillars 1 + 4). Weights are not committed (git-ignored); the box
+self-provisions on first boot. `autosentry/models.py` enumerates what the active config needs — the
+stage-1 YOLO weight (`detection.model`, optional `weapon_model`) into `models/`, and the stage-2 VLM
+(`reasoning.model`) into the local Ollama server — checks presence, and fetches only what's missing.
+`Hub.run()` calls this once before the camera loop (never on the hot path), and
+`scripts/download_models.py` is the explicit CLI (`--list`, `--force`). After provisioning, model
+loading needs no network. `YoloBackend` loads `models/<weight>` when present, else falls back to the
+bare name so Ultralytics can still auto-fetch. Set `models.auto_download: false` for air-gapped boxes
+provisioned out-of-band.
 
 ## 9. Component test definition (L4 right arm)
 - `detection` unit tests: known images → expected classes/boxes within IoU tolerance; **track-ID continuity**

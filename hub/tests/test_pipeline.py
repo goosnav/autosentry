@@ -144,3 +144,79 @@ def test_alarm_clears_and_silences_siren_on_return_to_normal():
 def test_empty_scene_stays_normal():
     hub, _ = _hub([])
     assert hub.step("default", _frame(0.0)).level == Level.NORMAL
+
+
+def test_keyframe_captured_for_triggering_event(tmp_path):
+    # FR-15: a stage-1 trigger persists the frame and records its path in the audit row.
+    hub, _ = _hub([_det("rifle", 0.9)])
+    hub.settings.notify.keyframe_dir = str(tmp_path)
+    written: list = []
+
+    def fake_writer(image, path):
+        written.append((image, path))
+        return True
+
+    hub._keyframe_writer = fake_writer  # type: ignore[assignment]
+    hub.step("default", _frame(0.0))  # rifle -> stage-1 fires -> SUSPECT transition
+    assert len(written) == 1
+    evt = next(e for e in hub.notifier.events() if e["level"] == "SUSPECT")
+    import json
+    assert json.loads(evt["keyframes"]) == [written[0][1]]
+
+
+def test_keyframe_write_failure_never_breaks_the_pipeline(tmp_path):
+    # Pillar 1: a failing keyframe encode degrades to no-keyframe, never an exception.
+    hub, _ = _hub([_det("rifle", 0.9)])
+    hub.settings.notify.keyframe_dir = str(tmp_path)
+
+    def boom(image, path):
+        raise OSError("disk full")
+
+    hub._keyframe_writer = boom  # type: ignore[assignment]
+    hub.step("default", _frame(0.0))  # must not raise
+    import json
+    evt = next(e for e in hub.notifier.events() if e["level"] == "SUSPECT")
+    assert json.loads(evt["keyframes"]) == []
+
+
+# --- voice is additive, never gates the alarm (FR-12, SE-1) ---------------------------
+class _RecordingVoice:
+    def __init__(self, raises: bool = False):
+        self.greeted = 0
+        self._raises = raises
+
+    def greet(self, context):
+        self.greeted += 1
+        if self._raises:
+            raise RuntimeError("llm hung")
+        from autosentry.contracts import VoiceTurn
+
+        return VoiceTurn("agent", "Please leave the property.", context, context.ts)
+
+
+def test_voice_engages_on_alarm_with_vision_context():
+    hub, sink = _hub([_det("rifle", 0.9)], assessor=FakeAssessor(armed=True, confidence=0.95))
+    hub.arm("default")
+    voice = _RecordingVoice()
+    hub.voice = voice  # type: ignore[assignment]
+    for i in range(4):
+        hub.step("default", _frame(float(i)))
+    assert hub.alarm.active is True
+    assert voice.greeted == 1  # engaged once on ALARM entry, grounded in the assessment
+    alarm_evt = next(e for e in hub.notifier.events() if e["level"] == "ALARM")
+    assert "voice_engaged" in alarm_evt["actions"]
+
+
+def test_hung_voice_never_blocks_or_silences_the_siren():
+    # FR-12 / FMEA F15: a broken voice agent degrades loudly but the siren still fires.
+    hub, sink = _hub([_det("rifle", 0.9)], assessor=FakeAssessor(armed=True, confidence=0.95))
+    hub.arm("default")
+    hub.voice = _RecordingVoice(raises=True)  # type: ignore[assignment]
+    for i in range(4):
+        hub.step("default", _frame(float(i)))  # must not raise
+    assert hub.alarm.active is True
+    assert sink.events == ["on"]  # siren fired despite the voice failure
+    assert "voice" in hub.degraded
+    alarm_evt = next(e for e in hub.notifier.events() if e["level"] == "ALARM")
+    assert "local_alarm" in alarm_evt["actions"]
+    assert "voice_engaged" not in alarm_evt["actions"]

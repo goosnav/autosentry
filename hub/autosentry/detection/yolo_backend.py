@@ -11,6 +11,8 @@ pure unit suite — the Detector's filtering/tracking logic is tested with a fak
 
 from __future__ import annotations
 
+import os
+
 from autosentry.config import DetectionConfig
 from autosentry.contracts import BBox, Detection
 
@@ -33,11 +35,17 @@ class YoloBackend:
         self.cfg = config
         self._model = None
 
+    def _resolve(self, name: str) -> str:
+        """Prefer the provisioned weight under models_dir; fall back to the bare name so
+        Ultralytics can still auto-fetch it if provisioning was skipped (FR-18)."""
+        local = os.path.join(self.cfg.models_dir, name)
+        return local if os.path.exists(local) else name
+
     def _load(self):
         if self._model is None:
             from ultralytics import YOLO  # heavy, lazy
 
-            self._model = YOLO(self.cfg.weapon_model or self.cfg.model)
+            self._model = YOLO(self._resolve(self.cfg.weapon_model or self.cfg.model))
             if self.cfg.device not in ("auto", ""):
                 self._model.to("cuda" if self.cfg.device == "tensorrt" else self.cfg.device)
         return self._model

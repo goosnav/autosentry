@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,6 +26,7 @@ class CaptureConfig(BaseModel):
 class DetectionConfig(BaseModel):
     model: str = "yolov8n.pt"
     weapon_model: str | None = None  # fine-tuned head (docs/VISION_PIPELINE.md §6)
+    models_dir: str = "models"  # local weight cache (set from ModelsConfig.dir); runs offline
     conf_person: float = 0.4
     conf_weapon: float = 0.5
     device: str = "auto"  # auto | cuda | cpu | tensorrt
@@ -86,16 +87,37 @@ class VoiceConfig(BaseModel):
     tts_voice: str = "en_US-amy-medium"
     max_reply_tokens: int = 80
     turn_timeout_s: float = 3.0  # voice is non-critical; never blocks alarm (FMEA F15)
+    models_dir: str = "models"  # local STT/TTS cache (set from ModelsConfig.dir)
 
 
 class NotifyConfig(BaseModel):
     enabled: bool = False
     endpoint: str | None = None
     queue_path: str = "events.db"
+    keyframe_dir: str = "keyframes"  # where triggering-frame images are persisted (FR-15)
+
+
+class ModelsConfig(BaseModel):
+    """Local AI-model provisioning (FR-18). Models are fetched once if missing, then run
+    fully offline (pillar 1, pillar 4 — on-device). Disable auto_download for air-gapped
+    boxes provisioned out-of-band via `scripts/download_models.py`."""
+
+    auto_download: bool = True  # fetch any missing model on startup (needs network ONCE)
+    dir: str = "models"  # local cache; weights are git-ignored and run offline thereafter
+    # Source bases (tunable so a mirror / pinned release can replace the public default).
+    yolo_assets_base: str = "https://github.com/ultralytics/assets/releases/download/v8.3.0"
+    piper_voices_base: str = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
 
 
 class WatchdogConfig(BaseModel):
     sw_timeout_s: float = 10.0  # missed liveness tick -> restart pipeline (RR-1, FMEA F4)
+
+
+class DashboardConfig(BaseModel):
+    enabled: bool = False  # opt-in local operator UI; never on the critical path (FR-17)
+    host: str = "127.0.0.1"  # loopback by default — not exposed to the network
+    port: int = 8088
+    event_limit: int = 50  # most-recent events returned to the UI
 
 
 class Settings(BaseSettings):
@@ -114,6 +136,16 @@ class Settings(BaseSettings):
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
     notify: NotifyConfig = Field(default_factory=NotifyConfig)
     watchdog: WatchdogConfig = Field(default_factory=WatchdogConfig)
+    dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
+    models: ModelsConfig = Field(default_factory=ModelsConfig)
+
+    @model_validator(mode="after")
+    def _propagate_models_dir(self) -> Settings:
+        """ModelsConfig.dir is the single source of truth for where weights live; mirror it
+        into the subsystems that load model files so the provisioner and the backends agree."""
+        self.detection.models_dir = self.models.dir
+        self.voice.models_dir = self.models.dir
+        return self
 
 
 def load_settings(path: str | Path | None = None) -> Settings:

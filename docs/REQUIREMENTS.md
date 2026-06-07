@@ -33,6 +33,8 @@ passes (see the RTM).
 | **FR-14** | The system shall support a manual panic trigger (forces ALARM from any mode), a test/maintenance mode, and per-zone arm/disarm. | STK-1 | D | M4/M6 | state/, app.py |
 | **FR-15** | The system shall log every alarm-relevant event with timestamp, keyframe(s), the stage-2 assessment, and the actions taken. | STK-6 | I | M2 | logging, notify/ |
 | **FR-16** | The system shall support multiple cameras/zones with correct per-zone attribution of detections and alarms. | STK-1 | D | M6 | capture/, state/ |
+| **FR-17** | The hub shall provide a local operator dashboard that displays per-zone threat state, recent events, and node/health status, and that exposes the FR-14 controls (arm/disarm, panic, test mode) and the SE-5 authority-contact confirmation. The dashboard is non-critical: it shall be off the detection→alarm path and its failure shall never affect detection, alarm, or notification. | STK-1, STK-6 | D | M6 | dashboard/, app.py |
+| **FR-18** | The hub shall run all inference models (stage-1 detector, stage-2 VLM, voice STT/LLM/TTS) on-device, and on startup shall ensure each required model is present, fetching any that are missing when permitted. Once provisioned, model loading shall require no network. | STK-2, STK-7 | D | M6 | models.py, scripts/download_models.py |
 
 ## Performance (PR) — targets/margins in [the TPM table](#tpm-cross-reference)
 
