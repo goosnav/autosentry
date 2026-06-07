@@ -80,9 +80,10 @@ python scripts/bench_lora.py --port /dev/ttyUSB0
 
 ## Status
 
-**M0 — Scaffold & baseline.** Repo structure, engineering baseline docs, and code/firmware skeletons are in
-place. Subsystems are implemented milestone by milestone per [docs/ROADMAP.md](docs/ROADMAP.md); a requirement
-is only "done" when its row in the [traceability matrix](docs/VERIFICATION_AND_VALIDATION.md) passes.
+**M0–M6 implemented in code; v1 acceptance is the remaining work.** Live status (counts, what's verified,
+what still needs hardware + the labeled benchmark) is in [docs/STATUS.md](docs/STATUS.md). The milestone
+map + verification deliverables per milestone are in [docs/ROADMAP.md](docs/ROADMAP.md); the
+requirement-level evidence is the [RTM in V&V](docs/VERIFICATION_AND_VALIDATION.md).
 
 ## License
 
