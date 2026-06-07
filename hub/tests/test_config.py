@@ -6,7 +6,21 @@ defaults, and that the mesh HMAC key is sourced from the environment, never the 
 
 from __future__ import annotations
 
-from autosentry.config import Settings, load_settings
+import pytest
+from pydantic import ValidationError
+
+from autosentry.config import CaptureConfig, Settings, load_settings
+
+
+def test_sources_and_zones_must_be_one_to_one():
+    # A mismatch must fail loudly at load, not silently blind a zone (pillar 1).
+    with pytest.raises(ValidationError):
+        CaptureConfig(sources=["0"], zones=["front", "back"])
+    with pytest.raises(ValidationError):
+        CaptureConfig(sources=["0", "1", "2"], zones=["front", "back"])
+    # Matched counts are accepted.
+    ok = CaptureConfig(sources=["0", "1"], zones=["front", "back"])
+    assert ok.zones == ["front", "back"]
 
 
 def test_defaults_are_safe():
@@ -30,6 +44,7 @@ def test_yaml_overrides_defaults(tmp_path):
         "  arm_confidence: 0.8\n"
         "  latch: false\n"
         "capture:\n"
+        "  sources: ['0', '1']\n"
         "  zones: [front, garage]\n"
     )
     s = load_settings(cfg)

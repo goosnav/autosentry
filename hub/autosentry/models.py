@@ -133,7 +133,10 @@ def _download_file(url: str, dest: str) -> None:
     os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
     tmp = f"{dest}.part"
     log.info("downloading %s -> %s", url, dest)
-    with urllib.request.urlopen(url) as resp, open(tmp, "wb") as fh:  # noqa: S310
+    # Bounded connect/read timeout: provisioning runs at boot, so a stalled mirror must
+    # surface as a URLError (caught per-target in ensure_present) rather than hang startup
+    # forever — a silent boot hang is exactly the failure pillar 1 forbids (FR-18).
+    with urllib.request.urlopen(url, timeout=30) as resp, open(tmp, "wb") as fh:  # noqa: S310
         while chunk := resp.read(1 << 16):
             fh.write(chunk)
     os.replace(tmp, dest)
@@ -224,7 +227,10 @@ def _ensure_one(
 
     if t.kind == "whisper":
         root = t.root or "."
-        present = os.path.isdir(root) and any(os.scandir(root))
+        present = False
+        if os.path.isdir(root):
+            with os.scandir(root) as entries:
+                present = any(entries)  # closes the iterator (no FD leak)
         if present and not force:
             return ProvisionResult(t.label, "present")
         if not auto:

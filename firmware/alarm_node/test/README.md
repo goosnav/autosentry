@@ -50,6 +50,9 @@ the hardcoded `MESH_KEY`). Then, using Unity:
    `replay_ok(src, 6)` (older) ⇒ false; `replay_ok(src, 8)` ⇒ true.
 6. **Encode round-trips** — `encode_frame()` with the golden fields + counter 7 reproduces
    `frame_hex` byte-for-byte.
+7. **ACK carries the ref counter** — `send_ack(MSG_ACK, 7)` produces a frame whose payload is
+   the 4-byte LE `07 00 00 00` (so the hub's `decode_ref` matches it). Guards against the
+   empty-ACK regression (was C1).
 
 A matching `[env:native]` (with `mbedtls`/a host SHA256 and `test_framework = unity`) is
 needed in `platformio.ini`. Until a host with PlatformIO runs this, SR-1's node-side leg is

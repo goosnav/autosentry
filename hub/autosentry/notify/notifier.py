@@ -95,11 +95,27 @@ class Notifier:
         )
         db.commit()
 
+    _EVENT_COLS = ("id", "ts", "zone", "level", "reason", "assessment", "actions", "keyframes")
+
     def events(self) -> list[dict[str, Any]]:
-        """Read back logged events (audit/tests)."""
+        """Read back all logged events oldest-first (audit/tests)."""
         db = self._connect()
-        cols = ["id", "ts", "zone", "level", "reason", "assessment", "actions", "keyframes"]
+        cols = self._EVENT_COLS
         rows = db.execute(f"SELECT {', '.join(cols)} FROM events ORDER BY id").fetchall()
+        return [dict(zip(cols, row, strict=True)) for row in rows]
+
+    def recent_events(self, limit: int) -> list[dict[str, Any]]:
+        """The newest `limit` events, newest-first — bounded by SQL, not in Python.
+
+        The dashboard polls this frequently; pushing ORDER BY + LIMIT into SQLite means a
+        months-old store with thousands of rows never loads the whole table into memory
+        (an unbounded read on every refresh otherwise).
+        """
+        db = self._connect()
+        cols = self._EVENT_COLS
+        rows = db.execute(
+            f"SELECT {', '.join(cols)} FROM events ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
         return [dict(zip(cols, row, strict=True)) for row in rows]
 
     def close(self) -> None:

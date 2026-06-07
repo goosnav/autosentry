@@ -71,3 +71,17 @@ def test_events_are_ordered():
     n.log_event(_state(Level.ALARM, 3.0), _assessment(3.0), ["local_alarm"])
     levels = [r["level"] for r in n.events()]
     assert levels == ["WATCH", "SUSPECT", "ALARM"]
+
+
+def test_recent_events_is_newest_first_and_limited():
+    n = _notifier()
+    for i, lvl in enumerate([Level.WATCH, Level.SUSPECT, Level.THREAT, Level.ALARM]):
+        n.log_event(_state(lvl, float(i)), None, [])
+    recent = n.recent_events(limit=2)
+    assert [r["level"] for r in recent] == ["ALARM", "THREAT"]  # newest first, bounded
+
+
+def test_recent_events_handles_fewer_rows_than_limit():
+    n = _notifier()
+    n.log_event(_state(Level.WATCH, 1.0), None, [])
+    assert len(n.recent_events(limit=50)) == 1

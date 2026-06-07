@@ -107,7 +107,7 @@ class DashboardService:
     def events(self, limit: int | None = None) -> list[dict[str, Any]]:
         """Most-recent audit events for the UI, newest first (FR-15)."""
         limit = self.event_limit if limit is None else limit
-        return list(reversed(self.hub.notifier.events()))[:limit]
+        return self.hub.notifier.recent_events(limit)  # newest-first, bounded in SQL
 
     # --- controls (the same operator actions a human already has) ----------------------
     def arm(self, zone: str | None = None) -> dict[str, Any]:

@@ -38,9 +38,22 @@ static const uint8_t HUB_ADDR = 0;
 static const uint8_t FW_VER = 1;        // reported in STATUS (payloads.StatusPayload.fw_ver)
 static const uint8_t CFG_CLEAR = 0x00;  // CONFIG sub-command: silence siren after owner ack
 
-// Pre-shared HMAC key. PLACEHOLDER — injected at provisioning/flash time, never committed.
-static const uint8_t MESH_KEY[] = "REPLACE_AT_PROVISIONING";
+// Pre-shared HMAC key. Injected at provisioning/flash time via a build flag
+// (-DAUTOSENTRY_MESH_KEY="..."), never committed (SR-3). The placeholder fallback only lets
+// the firmware build for bring-up; the node REFUSES to operate on it (see setup()) so a node
+// with no real key fails loudly instead of silently authenticating with a public placeholder.
+// Production should provision into NVS/efuse rather than a build flag (see test/README.md).
+#ifndef AUTOSENTRY_MESH_KEY
+#define AUTOSENTRY_MESH_KEY "REPLACE_AT_PROVISIONING"
+#endif
+static const uint8_t MESH_KEY[] = AUTOSENTRY_MESH_KEY;
 static const size_t  MESH_KEY_LEN = sizeof(MESH_KEY) - 1;
+
+static bool mesh_key_is_placeholder() {
+  static const char kPlaceholder[] = "REPLACE_AT_PROVISIONING";
+  return sizeof(MESH_KEY) == sizeof(kPlaceholder) &&
+         memcmp(MESH_KEY, kPlaceholder, sizeof(MESH_KEY)) == 0;
+}
 
 static const uint32_t HEARTBEAT_INTERVAL_MS = 5000;   // matches comms.hb_interval_s
 static const uint32_t HUB_TIMEOUT_MS = 20000;         // ~ hb_miss_max * interval -> fail-safe
@@ -138,7 +151,21 @@ static void set_siren(bool on) {
 static void send_frame(uint8_t type, uint8_t dst, const uint8_t* payload, size_t len) {
   uint8_t buf[64];
   size_t total = encode_frame(buf, type, dst, payload, len);
-  radio.transmit(buf, total);   // TODO(M3): handle TX errors + return to RX
+  radio.transmit(buf, total);   // TODO(M3): handle TX errors
+  // transmit() leaves the SX1262 in TX/standby — go back to RX immediately so the node is
+  // never deaf to a follow-up ALARM, CONFIG-clear, or hub heartbeat between heartbeats (C2).
+  radio.startReceive();
+}
+
+// ACK / HEARTBEAT_ACK must echo the acknowledged frame's counter as a 4-byte LE payload, so
+// the hub's _observe() (which checks len(payload) >= 4 and decode_ref()) can match it to the
+// command it sent (ICD-3, FR-8). An empty ACK is silently dropped hub-side.
+static void send_ack(uint8_t type, uint32_t ref_counter) {
+  uint8_t ref[4] = {
+    (uint8_t)(ref_counter & 0xFF), (uint8_t)((ref_counter >> 8) & 0xFF),
+    (uint8_t)((ref_counter >> 16) & 0xFF), (uint8_t)((ref_counter >> 24) & 0xFF),
+  };
+  send_frame(type, HUB_ADDR, ref, sizeof(ref));
 }
 
 static bool mains_present() {
@@ -162,17 +189,17 @@ static void handle_frame(const uint8_t* raw, size_t n) {
   switch (type) {
     case MSG_ALARM:
       set_siren(true);
-      send_frame(MSG_ACK, HUB_ADDR, nullptr, 0);   // confirm receipt (FR-8)
+      send_ack(MSG_ACK, counter);   // confirm receipt, echoing the hub's counter (FR-8)
       break;
     case MSG_TEST:
-      send_frame(MSG_ACK, HUB_ADDR, nullptr, 0);
+      send_ack(MSG_ACK, counter);
       break;
     case MSG_HEARTBEAT:
-      send_frame(MSG_HEARTBEAT_ACK, HUB_ADDR, nullptr, 0);
+      send_ack(MSG_HEARTBEAT_ACK, counter);
       break;
     case MSG_CONFIG:
       if (payload_len >= 1 && payload[0] == CFG_CLEAR) set_siren(false);  // owner-ack silence
-      send_frame(MSG_ACK, HUB_ADDR, nullptr, 0);
+      send_ack(MSG_ACK, counter);
       break;
     default:
       break;
@@ -186,6 +213,18 @@ void setup() {
   pinMode(PIN_STROBE, OUTPUT);
   pinMode(PIN_MAINS_SENSE, INPUT_PULLUP);
   set_siren(false);
+
+  // SR-3 / pillar 5: a node flashed without a real mesh key must not run — otherwise it
+  // would HMAC every frame with a publicly-known placeholder, defeating authentication.
+  // Fail loud (blink the strobe + log), never silently "work".
+  if (mesh_key_is_placeholder()) {
+    while (true) {
+      Serial.println("FATAL: mesh key not provisioned (placeholder). Reflash with "
+                     "-DAUTOSENTRY_MESH_KEY; refusing to operate (SR-3).");
+      digitalWrite(PIN_STROBE, HIGH); delay(250);
+      digitalWrite(PIN_STROBE, LOW);  delay(250);
+    }
+  }
 
   int st = radio.begin(915.0);   // TODO: region band from provisioning (915 US / 868 EU)
   if (st != RADIOLIB_ERR_NONE) {

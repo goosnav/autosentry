@@ -34,8 +34,16 @@ _OUT = os.path.join(
 
 # (name, packet) — the safety-critical ALARM broadcast and a node heartbeat.
 _CASES = [
-    ("alarm_broadcast", Packet(MsgType.ALARM, net_id=1, src=0, dst=0xFF, counter=7, payload=bytes([4, 2]))),
-    ("node_heartbeat", Packet(MsgType.HEARTBEAT, net_id=1, src=1, dst=0, counter=100, payload=struct.pack("<I", 3600))),
+    (
+        "alarm_broadcast",
+        Packet(MsgType.ALARM, net_id=1, src=0, dst=0xFF, counter=7, payload=bytes([4, 2])),
+    ),
+    (
+        "node_heartbeat",
+        Packet(
+            MsgType.HEARTBEAT, net_id=1, src=1, dst=0, counter=100, payload=struct.pack("<I", 3600)
+        ),
+    ),
 ]
 
 

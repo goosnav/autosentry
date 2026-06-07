@@ -113,8 +113,12 @@ class StateMachine:
 
         elif self._level == Level.THREAT:
             if armed_now:
-                assert self._threat_since is not None
-                if (now - self._threat_since) >= self.cfg.confirmation_window_s:
+                # Runtime guard, not assert: asserts are stripped under `python -O`, and a
+                # None here on the safety-critical path would crash with a TypeError. If it
+                # is somehow unset, treat this tick as the start of the confirmation window.
+                if self._threat_since is None:
+                    self._threat_since = now
+                elif (now - self._threat_since) >= self.cfg.confirmation_window_s:
                     self._set(Level.ALARM, now, "threat confirmed")
             else:
                 self._set(Level.SUSPECT, now, "threat de-escalated")
