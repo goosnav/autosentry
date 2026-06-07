@@ -76,6 +76,59 @@ def match_image(preds: list[Box], gts: list[Box], iou_thr: float) -> tuple[int, 
     return tp, fp, fn
 
 
+# Weapon classes the PR-5 false-negative gate is computed over (docs/VISION_PIPELINE.md §2).
+WEAPON_CLASSES = ("handgun", "rifle", "knife")
+
+
+@dataclass
+class GateReport:
+    """Pass/fail of the CI acceptance gates with human-readable reasons (PR-4, PR-5)."""
+
+    passed: bool
+    failures: list[str] = field(default_factory=list)
+
+
+def weapon_fn_rate(res: EvalResult, weapon_classes: tuple[str, ...] = WEAPON_CLASSES) -> float:
+    """False-negative rate restricted to weapon classes — the PR-5 measure (weapon-present).
+
+    A missed weapon is the safety-critical error (PR-5/TPM-5); person misses don't count
+    against this gate. Returns 0.0 when the benchmark contains no weapon ground truth.
+    """
+    tp = fn = 0
+    for cls in weapon_classes:
+        if cls in res.per_class:
+            ctp, _cfp, cfn = res.per_class[cls]
+            tp += ctp
+            fn += cfn
+    denom = tp + fn
+    return fn / denom if denom else 0.0
+
+
+def check_gates(
+    res: EvalResult,
+    *,
+    max_fn_rate: float = 0.05,
+    benign_major_alarms: int = 0,
+) -> GateReport:
+    """Apply the CI acceptance gates (docs/VISION_PIPELINE.md §7).
+
+    - **PR-5:** the weapon-present false-negative rate must be ≤ `max_fn_rate` (default 5%).
+    - **PR-4:** the benign suite must produce **zero** major-alarm triggers (OS-2).
+
+    Pure and side-effect-free so CI and tests share one source of truth for "is this build
+    safe to ship". A non-empty `failures` list means the gate fails.
+    """
+    failures: list[str] = []
+    wfn = weapon_fn_rate(res)
+    if wfn > max_fn_rate:
+        failures.append(f"PR-5: weapon false-negative rate {wfn:.3f} > {max_fn_rate:.3f}")
+    if benign_major_alarms > 0:
+        failures.append(
+            f"PR-4: benign suite produced {benign_major_alarms} major-alarm trigger(s) (must be 0)"
+        )
+    return GateReport(passed=not failures, failures=failures)
+
+
 def evaluate(images: list[tuple[list[Box], list[Box]]], iou_thr: float = 0.5) -> EvalResult:
     """Aggregate (preds, gts) over a benchmark into overall + per-class metrics."""
     res = EvalResult()
@@ -103,11 +156,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--iou", type=float, default=0.5)
     ap.add_argument("--max-fn-rate", type=float, default=0.05, help="PR-5 gate")
     args = ap.parse_args(argv)
-    # TODO(M1+): load images/labels from --set and run the live Detector to produce preds.
-    # The metrics core (evaluate/match_image) is implemented + unit-tested now.
+    # TODO(dataset): load images/labels from --set and run the live Detector to produce
+    # preds, then: res = evaluate(images, args.iou); report = check_gates(res, ...);
+    # print metrics and `raise SystemExit(0 if report.passed else 1)`. The metrics core
+    # (evaluate/match_image/weapon_fn_rate) and the PR-4/PR-5 gate (check_gates) are
+    # implemented + unit-tested now (hub/tests/test_eval_detection.py); only dataset
+    # loading is pending the labeled benchmark.
     raise SystemExit(
         f"benchmark loading for '{args.set}' lands with the labeled dataset; "
-        "metrics core is tested (see hub/tests/test_eval_detection.py)."
+        "metrics + PR-4/PR-5 gate are tested (see hub/tests/test_eval_detection.py)."
     )
 
 

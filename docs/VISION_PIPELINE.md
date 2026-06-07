@@ -73,7 +73,10 @@ confirmation window** so a single frame can't trip a major alarm (PR-4).
   per-condition **precision/recall**, the **false-negative rate** (PR-5, weapon-present), and a
   **false-positive** proxy on the benign suite (PR-4 / OS-2).
 - **Gate:** CI fails if FN-rate >5% or the benign suite produces a major-alarm trigger, or if either
-  regresses beyond tolerance vs the last baseline.
+  regresses beyond tolerance vs the last baseline. The gate is a pure function `check_gates()` in
+  `eval_detection.py` (PR-5 uses the **weapon-only** false-negative rate via `weapon_fn_rate()`, so person
+  misses never mask a missed weapon); it is unit-tested (`test_eval_detection.py`) and shared by CI so the
+  pass/fail decision has one source of truth. Only dataset loading awaits the labeled benchmark.
 
 ## 8. Night / low-light (ER-2)
 IR illuminator + IR-capable sensor; the pipeline is illumination-agnostic (works on IR frames). Include

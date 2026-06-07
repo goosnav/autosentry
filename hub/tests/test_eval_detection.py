@@ -11,7 +11,13 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
 
-from eval_detection import Box, evaluate, match_image  # noqa: E402
+from eval_detection import (  # noqa: E402
+    Box,
+    check_gates,
+    evaluate,
+    match_image,
+    weapon_fn_rate,
+)
 
 from autosentry.contracts import BBox  # noqa: E402
 
@@ -61,3 +67,45 @@ def test_aggregate_metrics_and_fn_rate():
     assert abs(res.fn_rate - 1 / 3) < 1e-9
     assert res.per_class["rifle"] == (1, 0, 1)
     assert res.per_class["person"] == (1, 0, 0)
+
+
+# --- PR-4/PR-5 acceptance gates (docs/VISION_PIPELINE.md §7) ---------------------------
+def test_weapon_fn_rate_ignores_person_misses():
+    # Two missed persons must NOT count against the weapon FN gate (PR-5 is weapon-present).
+    images = [
+        ([], [_b("person")]),               # missed person — not a weapon miss
+        ([], [_b("person", x=20)]),         # missed person — not a weapon miss
+        ([_b("rifle", x=100)], [_b("rifle", x=100)]),  # weapon hit
+    ]
+    res = evaluate(images, iou_thr=0.5)
+    assert weapon_fn_rate(res) == 0.0  # every weapon was found
+
+
+def test_weapon_fn_rate_counts_missed_weapons():
+    images = [
+        ([_b("rifle")], [_b("rifle")]),     # tp
+        ([], [_b("knife", x=100)]),         # missed weapon
+    ]
+    res = evaluate(images, iou_thr=0.5)
+    assert abs(weapon_fn_rate(res) - 0.5) < 1e-9  # 1 of 2 weapons missed
+
+
+def test_gates_pass_when_clean():
+    images = [([_b("rifle")], [_b("rifle")])]
+    report = check_gates(evaluate(images), max_fn_rate=0.05, benign_major_alarms=0)
+    assert report.passed is True
+    assert report.failures == []
+
+
+def test_pr5_gate_fails_on_missed_weapon():
+    images = [([_b("rifle")], [_b("rifle")]), ([], [_b("rifle", x=100)])]  # 50% FN
+    report = check_gates(evaluate(images), max_fn_rate=0.05)
+    assert report.passed is False
+    assert any("PR-5" in f for f in report.failures)
+
+
+def test_pr4_gate_fails_on_benign_major_alarm():
+    images = [([_b("person")], [_b("person")])]  # detection-clean
+    report = check_gates(evaluate(images), benign_major_alarms=1)
+    assert report.passed is False
+    assert any("PR-4" in f for f in report.failures)
