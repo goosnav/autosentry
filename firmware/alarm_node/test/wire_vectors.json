@@ -1,0 +1,30 @@
+{
+  "_README": "Golden cross-implementation wire vectors (ICD-3, SR-1). The hub codec hub/autosentry/comms/protocol.py is authoritative; firmware/alarm_node MUST reproduce frame_hex and hmac_hex byte-for-byte. Regenerate via scripts/gen_wire_vectors.py only on an intentional, ICD-documented format change.",
+  "key_utf8": "autosentry-golden-vector-key-001",
+  "header_fmt": "<BBBBBI",
+  "hmac_len": 8,
+  "vectors": [
+    {
+      "name": "alarm_broadcast",
+      "type": "ALARM",
+      "net_id": 1,
+      "src": 0,
+      "dst": 255,
+      "counter": 7,
+      "payload_hex": "0402",
+      "frame_hex": "01010100ff0700000004024c2395b59e44874d",
+      "hmac_hex": "4c2395b59e44874d"
+    },
+    {
+      "name": "node_heartbeat",
+      "type": "HEARTBEAT",
+      "net_id": 1,
+      "src": 1,
+      "dst": 0,
+      "counter": 100,
+      "payload_hex": "100e0000",
+      "frame_hex": "010301010064000000100e0000c3b27ee34b2b972e",
+      "hmac_hex": "c3b27ee34b2b972e"
+    }
+  ]
+}

@@ -116,7 +116,8 @@ python scripts/download_models.py             # YOLO + VLM + voice STT/LLM/TTS i
 
 # Unit / component (L4)
 cd hub && pytest                              # state machine, contracts, HMAC vectors, codecs
-cd firmware/alarm_node && pio test            # node firmware units
+cd firmware/alarm_node && pio test -e native  # node firmware units (host; see test/README.md)
+python scripts/gen_wire_vectors.py            # regen golden LoRa vectors (only on ICD-3 change)
 
 # Subsystem & system (L3/L2)
 python -m autosentry.app --source 0           # live webcam (auto-provisions models if missing)

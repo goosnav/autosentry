@@ -68,7 +68,7 @@ Status: ☐ not started · ◐ in progress · ☑ verified.
 | **RR-3** | M4 | ☐ | Battery runtime — **hardware only** (LiFePO4 + INA219). |
 | **RR-4** | M4 | ◐ | `test_reliability` detector-fault / assessor-fault / mesh-fault containment ☑; on-target fault injection pending. |
 | **RR-5** | M3/M4 | ◐ | Per-source node-health isolation ☑; multi-node bench pending. |
-| **SR-1** | M3 | ◐ | Forged-HMAC drop + replayed-counter reject + node-side ReplayWindow ☑. |
+| **SR-1** | M3 | ◐ | Forged-HMAC drop + replayed-counter reject + node-side ReplayWindow ☑; frozen cross-impl golden vector (`wire_vectors.json`) pinned hub-side by `test_wire_vectors` ☑; node `pio test` vs the vector specified, pending a PlatformIO host. |
 | **SR-2** | M3/M4 | ◐ | Hub offline-flag + node fail-safe ☑; physical jam/tamper bench pending. |
 | **SR-3** | M3 | ☑ | SR-3 inspection (SECURITY.md §6.1) + `test_security` regression (key from `AUTOSENTRY_MESH_KEY`, no committed default, .gitignore covers secret artifacts, no secret tracked). Node-side provisioning self-test (FMEA F20) on-hardware pending. |
 | **SR-4** | M2 | ☑ | SR-4 analysis (SECURITY.md §6.2) + `test_security` regression (no inbound listener on critical path, dashboard opt-in loopback off-path, no third-party analytics). |
