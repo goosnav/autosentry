@@ -117,7 +117,11 @@ python scripts/download_models.py             # YOLO + VLM + voice STT/LLM/TTS i
 # Unit / component (L4)
 cd hub && pytest                              # state machine, contracts, HMAC vectors, codecs
 cd firmware/alarm_node && pio test -e native  # node firmware units (host; see test/README.md)
-python scripts/gen_wire_vectors.py            # regen golden LoRa vectors (only on ICD-3 change)
+python scripts/gen_wire_vectors.py            # regen golden LoRa/serial vectors (on ICD-2/3 change)
+
+# Provisioning (per-deployment secret + flashing) — docs/PRODUCTION_PROVISIONING.md
+python scripts/provision.py new-key           # mint a per-property mesh key (SR-3)
+scripts/provision_node.sh --env lilygo_t3s3 --addr 1 --key "$KEY"   # flash an alarm node
 
 # Subsystem & system (L3/L2)
 python -m autosentry.app --source 0           # live webcam (auto-provisions models if missing)
