@@ -15,6 +15,134 @@
 #include <RadioLib.h>
 #include "mbedtls/md.h"
 
+#ifdef AUTOSENTRY_ROLE_GATEWAY
+// ============================ HUB USB-SERIAL ↔ LoRa GATEWAY ============================
+// A dumb radio modem (ICD-2). The hub hands it already-signed air bytes (ICD-3) over a
+// COBS+CRC8 serial frame; the gateway transmits them verbatim and forwards received air
+// bytes back. It performs NO HMAC and NO replay checks — the hub owns all authentication
+// (SR-1), so a gateway compromise cannot forge a frame the hub will accept. The framing here
+// mirrors hub/autosentry/comms/transport.py byte-for-byte; golden vectors in
+// test/wire_vectors.json pin both sides (verify with `pio test`).
+
+static const uint8_t GW_CMD_SEND = 0x01;  // host→gw: data = air bytes to transmit
+static const uint8_t GW_CMD_RX = 0x02;    // gw→host: data = rssi(int8) snr(int8) air...
+static const uint8_t GW_DELIM = 0x00;     // frame delimiter (COBS guarantees no interior 0)
+
+SX1262 radio = new Module(LORA_CS, LORA_DIO1, LORA_RST, LORA_BUSY);
+
+static uint8_t gw_crc8(const uint8_t* data, size_t len) {
+  uint8_t crc = 0;
+  for (size_t i = 0; i < len; i++) {
+    crc ^= data[i];
+    for (int b = 0; b < 8; b++)
+      crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0x07) : (uint8_t)(crc << 1);
+  }
+  return crc;
+}
+
+// COBS-encode data[len] into out[]; returns encoded length. out must hold len + len/254 + 2.
+static size_t gw_cobs_encode(const uint8_t* data, size_t len, uint8_t* out) {
+  size_t code_idx = 0, w = 1;  // out[0] reserved for the first code byte
+  uint8_t code = 1;
+  out[0] = 0;
+  for (size_t i = 0; i < len; i++) {
+    if (data[i] == 0) {
+      out[code_idx] = code;
+      code_idx = w++;
+      out[code_idx] = 0;
+      code = 1;
+    } else {
+      out[w++] = data[i];
+      if (++code == 0xFF) {
+        out[code_idx] = code;
+        code_idx = w++;
+        out[code_idx] = 0;
+        code = 1;
+      }
+    }
+  }
+  out[code_idx] = code;
+  return w;
+}
+
+// COBS-decode data[len] into out[]; returns decoded length, or -1 on a malformed frame.
+static int gw_cobs_decode(const uint8_t* data, size_t len, uint8_t* out) {
+  size_t idx = 0, w = 0;
+  while (idx < len) {
+    uint8_t code = data[idx];
+    if (code == 0) return -1;
+    idx++;
+    for (uint8_t k = 1; k < code; k++) {
+      if (idx >= len) return -1;
+      out[w++] = data[idx++];
+    }
+    if (code < 0xFF && idx < len) out[w++] = 0;
+  }
+  return (int)w;
+}
+
+// Forward a received air frame to the host as a CMD_RX frame (COBS+CRC + delimiter).
+static void gw_forward_rx(const uint8_t* air, size_t len, int8_t rssi, int8_t snr) {
+  uint8_t body[300];
+  size_t n = 0;
+  body[n++] = GW_CMD_RX;
+  body[n++] = (uint8_t)(len + 2);  // data length = rssi + snr + air
+  body[n++] = (uint8_t)rssi;
+  body[n++] = (uint8_t)snr;
+  for (size_t i = 0; i < len; i++) body[n++] = air[i];
+  body[n] = gw_crc8(body, n);
+  n++;
+  uint8_t enc[320];
+  size_t e = gw_cobs_encode(body, n, enc);
+  Serial.write(enc, e);
+  Serial.write(GW_DELIM);
+}
+
+// Decode one host frame (delimiter already stripped); on a valid SEND, transmit the air bytes.
+static void gw_handle_host_frame(const uint8_t* enc, size_t len) {
+  uint8_t body[300];
+  int n = gw_cobs_decode(enc, len, body);
+  if (n < 3) return;
+  uint8_t cmd = body[0], dlen = body[1];
+  if ((size_t)n != (size_t)dlen + 3) return;       // cmd(1) + len(1) + data + crc(1)
+  if (gw_crc8(body, (size_t)n - 1) != body[n - 1]) return;
+  if (cmd == GW_CMD_SEND) {
+    radio.transmit(body + 2, dlen);
+    radio.startReceive();
+  }
+}
+
+static uint8_t gw_rxbuf[300];
+static size_t gw_rxlen = 0;
+
+void setup() {
+  Serial.begin(115200);
+  int st = radio.begin(915.0);  // TODO: region band from provisioning (915 US / 868 EU)
+  if (st != RADIOLIB_ERR_NONE) Serial.printf("LoRa init failed: %d\n", st);
+  radio.startReceive();
+}
+
+void loop() {
+  // Host → LoRa: accumulate serial bytes until a delimiter, then handle the frame.
+  while (Serial.available()) {
+    uint8_t b = (uint8_t)Serial.read();
+    if (b == GW_DELIM) {
+      if (gw_rxlen) gw_handle_host_frame(gw_rxbuf, gw_rxlen);
+      gw_rxlen = 0;
+    } else if (gw_rxlen < sizeof(gw_rxbuf)) {
+      gw_rxbuf[gw_rxlen++] = b;
+    } else {
+      gw_rxlen = 0;  // overflow → resync at the next delimiter
+    }
+  }
+  // LoRa → host: forward any received air frame with its RSSI/SNR.
+  uint8_t air[64];
+  int len = radio.readData(air, sizeof(air));
+  if (len > 0) gw_forward_rx(air, (size_t)len, (int8_t)radio.getRSSI(), (int8_t)radio.getSNR());
+}
+
+#else  // ============================ ALARM NODE (default role) ============================
+
 // --- Wire protocol (mirror of protocol.py) ------------------------------------------
 // layout: ver(1) type(1) net_id(1) src(1) dst(1) counter(4 LE) payload(n) hmac(8)
 static const uint8_t  WIRE_VERSION = PROTO_VERSION;
@@ -263,3 +391,5 @@ void loop() {
     set_siren(true);
   }
 }
+
+#endif  // AUTOSENTRY_ROLE_GATEWAY / node role split

@@ -91,6 +91,10 @@ class Track:
     first_ts: float
     last_ts: float
     history: list[BBox] = field(default_factory=list)
+    # Per-bbox capture timestamps, parallel to `history` (history_ts[i] is when history[i]
+    # was seen). Lets the trigger policy measure *recent* motion over a time window instead
+    # of a lifetime average, so a loiter-then-sprint can't hide under the threshold (FR-3).
+    history_ts: list[float] = field(default_factory=list)
 
 
 class ThreatAssessment(BaseModel):

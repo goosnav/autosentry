@@ -51,6 +51,7 @@ class DetectionConfig(BaseModel):
 class TriggerConfig(BaseModel):
     loiter_s: float = 20.0
     approach_px_s: float = 120.0
+    approach_window_s: float = 2.0  # measure approach speed over this recent window, not lifetime
     restricted_zones: list[str] = []
     restricted_hours: list[int] = []  # hours (0-23) considered restricted
 

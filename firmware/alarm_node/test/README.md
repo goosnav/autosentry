@@ -54,6 +54,22 @@ the hardcoded `MESH_KEY`). Then, using Unity:
    the 4-byte LE `07 00 00 00` (so the hub's `decode_ref` matches it). Guards against the
    empty-ACK regression (was C1).
 
+## Gateway role (`AUTOSENTRY_ROLE_GATEWAY`) — ICD-2 framing
+
+The hub-gateway build (`pio run -e hub_gateway`) compiles the `#ifdef AUTOSENTRY_ROLE_GATEWAY`
+branch of `main.cpp`: a dumb USB-serial ↔ LoRa modem that COBS+CRC8-frames air bytes to/from
+the hub (`comms/transport.py`, ICD-2). Test its framing against the `serial_vectors` in
+`wire_vectors.json` (compile the gateway helpers into the `native` env):
+
+8. **CRC8** — `gw_crc8()` over a known body matches the Python `crc8` (poly 0x07, init 0x00).
+9. **COBS round-trip** — `gw_cobs_decode(gw_cobs_encode(x)) == x` for payloads with and
+   without interior `0x00` bytes, and for a >254-byte run (the 0xFF code-byte split).
+10. **SEND decodes** — feeding `serial_send_alarm.frame_hex` (minus the trailing `0x00`) to
+    `gw_handle_host_frame` yields `cmd == SEND` and the alarm air bytes; a CRC-corrupted copy
+    is rejected (no transmit).
+11. **RX framing** — `gw_forward_rx(air, len, -50, 7)` reproduces `serial_rx_alarm.frame_hex`
+    byte-for-byte (including the trailing delimiter).
+
 A matching `[env:native]` (with `mbedtls`/a host SHA256 and `test_framework = unity`) is
 needed in `platformio.ini`. Until a host with PlatformIO runs this, SR-1's node-side leg is
 verified by inspection + the shared golden vector (hub side green); the on-host `pio test`

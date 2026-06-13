@@ -24,6 +24,7 @@ detection:
 trigger:
   loiter_s: 20.0
   approach_px_s: 120.0
+  approach_window_s: 2.0   # measure approach speed over the recent window, not track lifetime
   restricted_zones: []
   restricted_hours: []
 

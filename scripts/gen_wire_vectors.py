@@ -24,6 +24,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "hub"))
 
 from autosentry.comms.protocol import HEADER_FMT, HMAC_LEN, Packet, encode  # noqa: E402
+from autosentry.comms.transport import CMD_RX, CMD_SEND, frame  # noqa: E402
 from autosentry.contracts import MsgType  # noqa: E402
 
 KEY = b"autosentry-golden-vector-key-001"
@@ -64,17 +65,43 @@ def build() -> dict:
                 "hmac_hex": raw[-HMAC_LEN:].hex(),
             }
         )
+    # ICD-2 serial framing (COBS + CRC8). The gateway firmware must reproduce these exactly:
+    # a SEND frame carrying the alarm air bytes, and an RX frame carrying rssi/snr + air.
+    alarm_air = bytes.fromhex(vectors[0]["frame_hex"])
+    send_frame = frame(CMD_SEND, alarm_air)
+    rx_payload = bytes([0xCE, 0x07]) + alarm_air  # rssi=-50 (0xCE), snr=7, then air
+    rx_frame = frame(CMD_RX, rx_payload)
+    serial_vectors = [
+        {
+            "name": "serial_send_alarm",
+            "cmd": CMD_SEND,
+            "data_hex": alarm_air.hex(),
+            "frame_hex": send_frame.hex(),  # includes trailing 0x00 delimiter
+        },
+        {
+            "name": "serial_rx_alarm",
+            "cmd": CMD_RX,
+            "rssi": -50,
+            "snr": 7,
+            "data_hex": rx_payload.hex(),
+            "frame_hex": rx_frame.hex(),
+        },
+    ]
+
     return {
         "_README": (
-            "Golden cross-implementation wire vectors (ICD-3, SR-1). The hub codec "
-            "hub/autosentry/comms/protocol.py is authoritative; firmware/alarm_node MUST "
-            "reproduce frame_hex and hmac_hex byte-for-byte. Regenerate via "
-            "scripts/gen_wire_vectors.py only on an intentional, ICD-documented format change."
+            "Golden cross-implementation wire vectors. ICD-3 (vectors[]) is the LoRa air "
+            "format signed by hub/autosentry/comms/protocol.py; ICD-2 (serial_vectors[]) is "
+            "the COBS+CRC8 host↔gateway framing from comms/transport.py. Both are "
+            "authoritative on the hub side; firmware/alarm_node MUST reproduce frame_hex "
+            "byte-for-byte. Regenerate via scripts/gen_wire_vectors.py only on an "
+            "intentional, ICD-documented format change."
         ),
         "key_utf8": KEY.decode(),
         "header_fmt": HEADER_FMT,
         "hmac_len": HMAC_LEN,
         "vectors": vectors,
+        "serial_vectors": serial_vectors,
     }
 
 

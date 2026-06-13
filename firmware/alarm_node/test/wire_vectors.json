@@ -1,5 +1,5 @@
 {
-  "_README": "Golden cross-implementation wire vectors (ICD-3, SR-1). The hub codec hub/autosentry/comms/protocol.py is authoritative; firmware/alarm_node MUST reproduce frame_hex and hmac_hex byte-for-byte. Regenerate via scripts/gen_wire_vectors.py only on an intentional, ICD-documented format change.",
+  "_README": "Golden cross-implementation wire vectors. ICD-3 (vectors[]) is the LoRa air format signed by hub/autosentry/comms/protocol.py; ICD-2 (serial_vectors[]) is the COBS+CRC8 host\u2194gateway framing from comms/transport.py. Both are authoritative on the hub side; firmware/alarm_node MUST reproduce frame_hex byte-for-byte. Regenerate via scripts/gen_wire_vectors.py only on an intentional, ICD-documented format change.",
   "key_utf8": "autosentry-golden-vector-key-001",
   "header_fmt": "<BBBBBI",
   "hmac_len": 8,
@@ -25,6 +25,22 @@
       "payload_hex": "100e0000",
       "frame_hex": "010301010064000000100e0000c3b27ee34b2b972e",
       "hmac_hex": "c3b27ee34b2b972e"
+    }
+  ],
+  "serial_vectors": [
+    {
+      "name": "serial_send_alarm",
+      "cmd": 1,
+      "data_hex": "01010100ff0700000004024c2395b59e44874d",
+      "frame_hex": "06011301010103ff0701010c04024c2395b59e44874d6600"
+    },
+    {
+      "name": "serial_rx_alarm",
+      "cmd": 2,
+      "rssi": -50,
+      "snr": 7,
+      "data_hex": "ce0701010100ff0700000004024c2395b59e44874d",
+      "frame_hex": "080215ce0701010103ff0701010c04024c2395b59e44874d9500"
     }
   ]
 }
