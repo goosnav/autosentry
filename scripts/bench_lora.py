@@ -92,7 +92,7 @@ def run_serial(role: str, port: str, baud: int, count: int, key: bytes) -> int:
         transport.close()
 
 
-def _ping(transport: "object", count: int, key: bytes) -> int:
+def _ping(transport: object, count: int, key: bytes) -> int:
     """Send signed ALARM frames, wait for each ACK, report RTT + loss (PR-3/PR-7)."""
     rtts: list[float] = []
     acked = 0
@@ -119,7 +119,7 @@ def _ping(transport: "object", count: int, key: bytes) -> int:
     return 0 if acked == count else 1
 
 
-def _echo(transport: "object", count: int, key: bytes) -> int:
+def _echo(transport: object, count: int, key: bytes) -> int:
     """Node stand-in: verify inbound HMAC + reject replays, ACK each accepted frame."""
     replay = ReplayWindow()
     acked = 0
