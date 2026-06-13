@@ -437,6 +437,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source", default=None, help="override capture source (index/path/rtsp)")
     parser.add_argument("--zone", default=None, help="zone name for a single --source override")
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
+    parser.add_argument(
+        "--selftest",
+        action="store_true",
+        help="run the preflight readiness check and exit (0=ready, 1=not ready)",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -448,6 +453,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.source is not None:
         settings.capture.sources = [args.source]
         settings.capture.zones = [args.zone or "default"]
+
+    if args.selftest:
+        from autosentry.selftest import format_report, passed, run_selftest
+
+        results = run_selftest(settings)
+        print(format_report(results))
+        return 0 if passed(results) else 1
 
     return Hub(settings).run()
 

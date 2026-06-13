@@ -182,18 +182,20 @@ def ensure_present(
     fetch_file: Callable[[str, str], None] | None = None,
     fetch_whisper: Callable[[str, str], None] | None = None,
     force: bool = False,
+    report_only: bool = False,
 ) -> list[ProvisionResult]:
     """Ensure every required model is present, fetching the missing ones (FR-18).
 
     Idempotent: present models are left untouched unless `force`. When `auto_download` is off
     a missing model is reported (status "missing") rather than fetched — useful for air-gapped
-    provisioning. Each target is isolated: one failure is recorded and the rest still proceed,
-    so a single bad mirror can't abort the whole provisioning pass.
+    provisioning. `report_only` checks presence and never fetches regardless of config (used by
+    the preflight self-test). Each target is isolated: one failure is recorded and the rest
+    still proceed, so a single bad mirror can't abort the whole provisioning pass.
     """
     ollama_factory = ollama_factory or _HttpOllamaClient
     fetch_file = fetch_file or _download_file
     fetch_whisper = fetch_whisper or _download_whisper
-    auto = s.models.auto_download or force
+    auto = False if report_only else (s.models.auto_download or force)
 
     results: list[ProvisionResult] = []
     for t in targets(s):

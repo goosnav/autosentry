@@ -67,6 +67,7 @@ files = [
     "autosentry/notify/keyframes.py",
     "autosentry/dashboard/service.py",
     "autosentry/models.py",
+    "autosentry/selftest.py",
     "autosentry/watchdog.py",
     "autosentry/app.py",
 ]

@@ -97,6 +97,23 @@ class OpenCVCamera:
             seq += 1
         self._release()
 
+    def probe(self) -> bool:
+        """Single open+read attempt for the preflight self-test (OS-8).
+
+        Unlike `frames()`, this never enters the resilient retry loop — it opens once, reads
+        one frame, releases, and returns whether a frame came through. Bounded, never hangs.
+        """
+        cap: Capture | None = None
+        try:
+            cap = self._open_capture()
+            ok, image = cap.read()
+            return bool(ok and image is not None)
+        except Exception:
+            return False
+        finally:
+            if cap is not None:
+                cap.release()
+
     def _reconnect(self) -> None:
         self.reconnects += 1
         self._release()
