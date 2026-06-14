@@ -80,3 +80,28 @@ def test_model_cannot_spoof_zone_or_ts():
     spoof = '{"armed": false, "confidence": 0.1, "zone": "attacker", "ts": 999}'
     a = _assessor(FakeBackend(spoof)).assess([], [object()], "front", 7.0)
     assert a.zone == "front" and a.ts == 7.0
+
+
+def test_fallback_confidence_stays_below_a_lowered_arm_threshold():
+    # Safety: even if an operator tunes arm_confidence down, a stage-2 failure must NOT reach
+    # the THREAT threshold (armed_now is conf >= arm_confidence). Otherwise every VLM outage
+    # would manufacture a false alarm (pillar 3).
+    a = Assessor(ReasoningConfig(), backend=FakeBackend(raises=True), arm_confidence=0.4)
+    out = a.assess([], [object()], "z", 0.0)
+    assert out.confidence < 0.4  # stays at SUSPECT, never auto-escalates to THREAT/ALARM
+
+
+def test_json_with_trailing_braces_in_prose_is_extracted():
+    # Greedy {.*} would swallow the trailing "{see log}" and fail to parse; the balanced
+    # scan stops at the object's own closing brace.
+    raw = _GOOD + " Note: details in the audit {see log}."
+    a = _assessor(FakeBackend(raw)).assess([], [object()], "front", 0.0)
+    assert a.weapon_type == "rifle"
+
+
+def test_nested_json_object_is_parsed_not_truncated():
+    # A non-greedy {.*?} would stop at the first inner '}', losing the rest; the balanced
+    # scan keeps the whole object. (extra nested key is ignored by the schema)
+    raw = '{"armed": true, "confidence": 0.9, "intent": "x", "meta": {"k": 1}, "description": "d"}'
+    a = _assessor(FakeBackend(raw)).assess([], [object()], "front", 0.0)
+    assert a.armed is True and a.confidence == 0.9

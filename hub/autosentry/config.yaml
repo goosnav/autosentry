@@ -14,7 +14,9 @@ capture:
 
 detection:
   model: "yolov8n.pt"
-  weapon_model: null     # path to fine-tuned weapon-detection weights (docs/VISION_PIPELINE.md)
+  weapon_model: null     # REQUIRED for weapon detection: base COCO has no handgun/rifle/knife.
+                         # null = stage-1 weapon detection DISABLED (hub logs a loud warning at
+                         # boot). Set to a fine-tuned head before deployment (VISION_PIPELINE §6).
   conf_person: 0.4
   conf_weapon: 0.5
   device: "auto"
@@ -22,6 +24,7 @@ detection:
 trigger:
   loiter_s: 20.0
   approach_px_s: 120.0
+  approach_window_s: 2.0   # measure approach speed over the recent window, not track lifetime
   restricted_zones: []
   restricted_hours: []
 

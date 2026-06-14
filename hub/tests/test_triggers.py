@@ -63,6 +63,31 @@ def test_slow_movement_does_not_fire_approach():
     assert ev.evaluate([t], "front", 1.0).fired is False
 
 
+def test_loiter_then_sprint_fires_on_recent_window():
+    # 60s of near-stationary loiter, then a 400px sprint in the last 2s. Lifetime average is
+    # ~400/62 ≈ 6 px/s (below threshold), but the recent window sees ~200 px/s — must fire.
+    ev = TriggerEvaluator(
+        TriggerConfig(approach_px_s=100.0, loiter_s=999.0, approach_window_s=2.0)
+    )
+    history = [BBox(0, 0, 10, 10), BBox(1, 1, 11, 11), BBox(0, 400, 10, 410)]
+    history_ts = [0.0, 60.0, 62.0]  # last two samples are 2s apart, 400px of motion
+    t = Track(
+        track_id=1, cls="person", bbox=history[-1],
+        first_ts=0.0, last_ts=62.0, history=history, history_ts=history_ts,
+    )
+    res = ev.evaluate([t], "front", 62.0)
+    assert res.fired and res.reason.startswith("approach")
+
+
+def test_loiter_then_sprint_evades_lifetime_average_proof():
+    # Same track WITHOUT timestamps falls back to the lifetime average and does NOT fire —
+    # this is the bug the windowed speed fixes (documents the difference explicitly).
+    ev = TriggerEvaluator(TriggerConfig(approach_px_s=100.0, loiter_s=999.0))
+    history = [BBox(0, 0, 10, 10), BBox(1, 1, 11, 11), BBox(0, 400, 10, 410)]
+    t = _track("person", first_ts=0.0, last_ts=62.0, history=history)  # no history_ts
+    assert ev.evaluate([t], "front", 62.0).fired is False
+
+
 def test_restricted_zone_and_time_fires():
     ts = 1_700_000_000.0
     hour = time.localtime(ts).tm_hour  # derive the actual local hour for determinism

@@ -26,17 +26,26 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-      - name: Ruff lint
-        run: ruff check .
+      - name: Ruff lint (hub + scripts)
+        run: ruff check . ../scripts
       - name: Mypy (typed core only)
         run: mypy
       - name: Pytest
         run: pytest -q
         env:
           AUTOSENTRY_MESH_KEY: ci-dummy-key
+      - name: Golden wire vectors are in sync with the codec
+        working-directory: ${{ github.workspace }}
+        run: |
+          python scripts/gen_wire_vectors.py
+          git diff --exit-code firmware/alarm_node/test/wire_vectors.json \
+            || (echo "::error::wire_vectors.json is stale — run scripts/gen_wire_vectors.py" && exit 1)
 
   firmware:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [lilygo_t3s3, heltec_v3, hub_gateway]   # node boards + the USB-serial gateway role
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -44,5 +53,8 @@ jobs:
           python-version: "3.12"
       - name: Install PlatformIO
         run: pip install platformio
-      - name: Build alarm-node firmware
-        run: pio run -d firmware/alarm_node -e lilygo_t3s3
+      - name: Build firmware (${{ matrix.env }})
+        # A real mesh key so the node build links a non-placeholder key; the gateway ignores it.
+        run: pio run -d firmware/alarm_node -e ${{ matrix.env }}
+        env:
+          PLATFORMIO_BUILD_FLAGS: '-DAUTOSENTRY_MESH_KEY=\"ci-build-key\"'

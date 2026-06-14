@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import glob
 import os
 import sys
 from dataclasses import dataclass, field
@@ -21,6 +22,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "hub"))
 
 from autosentry.contracts import BBox  # noqa: E402
 from autosentry.detection.tracking import iou  # noqa: E402
+
+# Default class-id → name map (Ultralytics YOLO label files index classes by integer). Override
+# with a --names file (one class name per line, in index order). Index 0 is COCO `person`.
+_DEFAULT_NAMES = ["person", "handgun", "rifle", "knife"]
+_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".bmp")
 
 
 @dataclass(frozen=True)
@@ -150,22 +156,115 @@ def evaluate(images: list[tuple[list[Box], list[Box]]], iou_thr: float = 0.5) ->
     return res
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="AutoSentry detection eval")
-    ap.add_argument("--set", required=True, help="benchmark dir (YOLO format)")
-    ap.add_argument("--iou", type=float, default=0.5)
-    ap.add_argument("--max-fn-rate", type=float, default=0.05, help="PR-5 gate")
-    args = ap.parse_args(argv)
-    # TODO(dataset): load images/labels from --set and run the live Detector to produce
-    # preds, then: res = evaluate(images, args.iou); report = check_gates(res, ...);
-    # print metrics and `raise SystemExit(0 if report.passed else 1)`. The metrics core
-    # (evaluate/match_image/weapon_fn_rate) and the PR-4/PR-5 gate (check_gates) are
-    # implemented + unit-tested now (hub/tests/test_eval_detection.py); only dataset
-    # loading is pending the labeled benchmark.
-    raise SystemExit(
-        f"benchmark loading for '{args.set}' lands with the labeled dataset; "
-        "metrics + PR-4/PR-5 gate are tested (see hub/tests/test_eval_detection.py)."
+# --- YOLO-format dataset loading (pure; the detector run is the only heavy step) ---------
+def load_names(path: str | None) -> list[str]:
+    """Class names in index order — from a --names file (one per line) or the default map."""
+    if path and os.path.exists(path):
+        with open(path) as fh:
+            return [ln.strip() for ln in fh if ln.strip()]
+    return list(_DEFAULT_NAMES)
+
+
+def parse_label_file(path: str) -> list[tuple[int, float, float, float, float]]:
+    """Read a YOLO label file → [(cls_id, cx, cy, w, h)] (normalized). Missing file → []."""
+    rows: list[tuple[int, float, float, float, float]] = []
+    if not os.path.exists(path):
+        return rows
+    with open(path) as fh:
+        for line in fh:
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            c, cx, cy, w, h = parts[:5]
+            rows.append((int(float(c)), float(cx), float(cy), float(w), float(h)))
+    return rows
+
+
+def yolo_to_bbox(cx: float, cy: float, w: float, h: float, width: int, height: int) -> BBox:
+    """Normalized YOLO center-box → pixel BBox (so GT and detector preds share units)."""
+    return BBox(
+        x1=(cx - w / 2.0) * width,
+        y1=(cy - h / 2.0) * height,
+        x2=(cx + w / 2.0) * width,
+        y2=(cy + h / 2.0) * height,
     )
+
+
+def discover_pairs(root: str) -> list[tuple[str, str]]:
+    """Find (image, label) pairs. Supports `<root>/images/` + `<root>/labels/` (Ultralytics)
+    and a flat `<root>/*.jpg` + `<root>/*.txt` layout. Sorted for deterministic runs."""
+    img_dir = os.path.join(root, "images")
+    lbl_dir = os.path.join(root, "labels")
+    if os.path.isdir(img_dir) and os.path.isdir(lbl_dir):
+        images = [
+            p for p in glob.glob(os.path.join(img_dir, "*")) if p.lower().endswith(_IMAGE_EXTS)
+        ]
+        return sorted(
+            (img, os.path.join(lbl_dir, os.path.splitext(os.path.basename(img))[0] + ".txt"))
+            for img in images
+        )
+    images = [p for p in glob.glob(os.path.join(root, "*")) if p.lower().endswith(_IMAGE_EXTS)]
+    return sorted((img, os.path.splitext(img)[0] + ".txt") for img in images)
+
+
+def ground_truth_boxes(label_path: str, names: list[str], width: int, height: int) -> list[Box]:
+    """Convert a YOLO label file into pixel-space Box[] using the class-name map."""
+    out: list[Box] = []
+    for cls_id, cx, cy, w, h in parse_label_file(label_path):
+        if 0 <= cls_id < len(names):
+            out.append(Box(cls=names[cls_id], bbox=yolo_to_bbox(cx, cy, w, h, width, height)))
+    return out
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="AutoSentry detection eval (PR-4/PR-5)")
+    ap.add_argument("--set", required=True, help="benchmark dir (YOLO format: images/ + labels/)")
+    ap.add_argument("--iou", type=float, default=0.5)
+    ap.add_argument("--max-fn-rate", type=float, default=0.05, help="PR-5 weapon FN gate")
+    ap.add_argument("--names", default=None, help="class-names file (one per line, index order)")
+    ap.add_argument("--config", default=None, help="hub config.yaml (for the detector weights)")
+    args = ap.parse_args(argv)
+
+    pairs = discover_pairs(args.set)
+    if not pairs:
+        raise SystemExit(f"no image/label pairs under {args.set!r} (expected images/ + labels/)")
+    names = load_names(args.names)
+
+    # Heavy step (lazy): load the configured detector + read each image. Imported here so the
+    # pure loaders above stay unit-testable without cv2/ultralytics.
+    import cv2  # noqa: PLC0415
+
+    from autosentry.config import Settings, load_settings
+    from autosentry.contracts import Frame
+    from autosentry.detection.detector import Detector
+
+    settings = load_settings(args.config) if args.config else Settings()
+    detector = Detector(settings.detection)
+
+    images: list[tuple[list[Box], list[Box]]] = []
+    for seq, (img_path, lbl_path) in enumerate(pairs):
+        image = cv2.imread(img_path)
+        if image is None:
+            print(f"  skip (unreadable): {img_path}")
+            continue
+        height, width = image.shape[:2]
+        gts = ground_truth_boxes(lbl_path, names, width, height)
+        frame = Frame(zone="eval", ts=float(seq), image=image, seq=seq)
+        preds = [Box(cls=d.cls, bbox=d.bbox) for d in detector.detect(frame)]  # stage-1 (FR-3)
+        images.append((preds, gts))
+
+    res = evaluate(images, iou_thr=args.iou)
+    report = check_gates(res, max_fn_rate=args.max_fn_rate)
+    print(f"images={len(images)} precision={res.precision:.3f} recall={res.recall:.3f} "
+          f"weapon_fn_rate={weapon_fn_rate(res):.3f}")
+    for cls, (tp, fp, fn) in sorted(res.per_class.items()):
+        print(f"  {cls:10s} tp={tp} fp={fp} fn={fn}")
+    if report.passed:
+        print("GATE: PASS (PR-4/PR-5)")
+        return 0
+    for f in report.failures:
+        print(f"GATE FAIL: {f}")
+    return 1
 
 
 if __name__ == "__main__":

@@ -133,7 +133,10 @@ def _download_file(url: str, dest: str) -> None:
     os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
     tmp = f"{dest}.part"
     log.info("downloading %s -> %s", url, dest)
-    with urllib.request.urlopen(url) as resp, open(tmp, "wb") as fh:  # noqa: S310
+    # Bounded connect/read timeout: provisioning runs at boot, so a stalled mirror must
+    # surface as a URLError (caught per-target in ensure_present) rather than hang startup
+    # forever — a silent boot hang is exactly the failure pillar 1 forbids (FR-18).
+    with urllib.request.urlopen(url, timeout=30) as resp, open(tmp, "wb") as fh:  # noqa: S310
         while chunk := resp.read(1 << 16):
             fh.write(chunk)
     os.replace(tmp, dest)
@@ -179,18 +182,20 @@ def ensure_present(
     fetch_file: Callable[[str, str], None] | None = None,
     fetch_whisper: Callable[[str, str], None] | None = None,
     force: bool = False,
+    report_only: bool = False,
 ) -> list[ProvisionResult]:
     """Ensure every required model is present, fetching the missing ones (FR-18).
 
     Idempotent: present models are left untouched unless `force`. When `auto_download` is off
     a missing model is reported (status "missing") rather than fetched — useful for air-gapped
-    provisioning. Each target is isolated: one failure is recorded and the rest still proceed,
-    so a single bad mirror can't abort the whole provisioning pass.
+    provisioning. `report_only` checks presence and never fetches regardless of config (used by
+    the preflight self-test). Each target is isolated: one failure is recorded and the rest
+    still proceed, so a single bad mirror can't abort the whole provisioning pass.
     """
     ollama_factory = ollama_factory or _HttpOllamaClient
     fetch_file = fetch_file or _download_file
     fetch_whisper = fetch_whisper or _download_whisper
-    auto = s.models.auto_download or force
+    auto = False if report_only else (s.models.auto_download or force)
 
     results: list[ProvisionResult] = []
     for t in targets(s):
@@ -224,7 +229,10 @@ def _ensure_one(
 
     if t.kind == "whisper":
         root = t.root or "."
-        present = os.path.isdir(root) and any(os.scandir(root))
+        present = False
+        if os.path.isdir(root):
+            with os.scandir(root) as entries:
+                present = any(entries)  # closes the iterator (no FD leak)
         if present and not force:
             return ProvisionResult(t.label, "present")
         if not auto:

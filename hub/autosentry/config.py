@@ -22,6 +22,18 @@ class CaptureConfig(BaseModel):
     fps: int = 15
     timeout_s: float = 5.0  # no-frame -> reconnect + DEGRADED (FMEA F1)
 
+    @model_validator(mode="after")
+    def _sources_match_zones(self) -> CaptureConfig:
+        # sources↔zones are strictly 1:1 (one camera per zone, FR-16). Fail loudly at load
+        # rather than letting a mismatch silently drop a camera or leave a zone blind — a
+        # blind zone on a security system is exactly the silent failure pillar 1 forbids.
+        if len(self.sources) != len(self.zones):
+            raise ValueError(
+                f"capture.sources ({len(self.sources)}) and capture.zones "
+                f"({len(self.zones)}) must be 1:1 — each zone needs exactly one source"
+            )
+        return self
+
 
 class DetectionConfig(BaseModel):
     model: str = "yolov8n.pt"
@@ -39,6 +51,7 @@ class DetectionConfig(BaseModel):
 class TriggerConfig(BaseModel):
     loiter_s: float = 20.0
     approach_px_s: float = 120.0
+    approach_window_s: float = 2.0  # measure approach speed over this recent window, not lifetime
     restricted_zones: list[str] = []
     restricted_hours: list[int] = []  # hours (0-23) considered restricted
 

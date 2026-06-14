@@ -68,7 +68,9 @@ class Hub:
         self.triggers = TriggerEvaluator(settings.trigger)
         self.machines = {z: StateMachine(z, settings.state) for z in self.zones}
         # M2 subsystems: stage-2 reasoning, local alarm, and the always-on audit log.
-        self.assessor = assessor or Assessor(settings.reasoning)
+        self.assessor = assessor or Assessor(
+            settings.reasoning, arm_confidence=settings.state.arm_confidence
+        )
         self.alarm = AlarmController(settings.alarm)
         self.notifier = notifier or Notifier(settings.notify)  # FR-15 audit always runs
         # Best-effort keyframe encoder (FR-15); injectable so tests avoid the cv2 dependency.
@@ -84,6 +86,15 @@ class Hub:
         self.degraded: dict[str, str] = {}  # subsystem -> reason; non-empty = DEGRADED (RR-4)
         # M6: authority-contact recommendations awaiting explicit owner confirmation (SE-5).
         self.pending_authority: list[AuthorityRecommendation] = []
+        # Loud config warning (pillar 1): base COCO weights have no handgun/rifle/knife class,
+        # so without a fine-tuned head stage-1 cannot detect weapons — a security-relevant gap
+        # that must not be silent (FR-3, docs/VISION_PIPELINE.md §6).
+        if settings.detection.weapon_model is None:
+            log.warning(
+                "detection.weapon_model is unset — stage-1 WEAPON DETECTION IS DISABLED "
+                "(base COCO has no weapon classes). Configure a fine-tuned head before "
+                "relying on weapon detection (FR-3)."
+            )
 
     # --- operator controls (FR-14) ----------------------------------------------------
     def arm(self, zone: str | None = None) -> None:
@@ -327,7 +338,7 @@ class Hub:
                 fps=cap.fps,
                 timeout_s=cap.timeout_s,
             )
-            for src, zone in zip(sources, self.zones, strict=False)
+            for src, zone in zip(sources, self.zones, strict=True)  # 1:1, enforced at load
         ]
         self.watchdog.ready()  # tell systemd we're up (RR-1)
         dashboard = self._start_dashboard()  # non-critical operator UI (FR-17)
@@ -426,6 +437,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source", default=None, help="override capture source (index/path/rtsp)")
     parser.add_argument("--zone", default=None, help="zone name for a single --source override")
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
+    parser.add_argument(
+        "--selftest",
+        action="store_true",
+        help="run the preflight readiness check and exit (0=ready, 1=not ready)",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -437,6 +453,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.source is not None:
         settings.capture.sources = [args.source]
         settings.capture.zones = [args.zone or "default"]
+
+    if args.selftest:
+        from autosentry.selftest import format_report, passed, run_selftest
+
+        results = run_selftest(settings)
+        print(format_report(results))
+        return 0 if passed(results) else 1
 
     return Hub(settings).run()
 

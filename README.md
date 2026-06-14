@@ -53,6 +53,11 @@ here:
 5. [docs/VERIFICATION_AND_VALIDATION.md](docs/VERIFICATION_AND_VALIDATION.md) — how we prove it works
 6. [docs/ROADMAP.md](docs/ROADMAP.md) — milestones M0–M6
 
+**Building on the code or deploying hardware?** Three practical guides:
+- [docs/CODEBASE.md](docs/CODEBASE.md) — a developer's walkthrough of the source (modules, data flow, how to extend)
+- [docs/HARDWARE_SETUP.md](docs/HARDWARE_SETUP.md) — exact steps from parts to an armed system
+- [docs/PRODUCTION_PROVISIONING.md](docs/PRODUCTION_PROVISIONING.md) — building & shipping units at scale
+
 **If you are an AI agent or a new contributor, read [CLAUDE.md](CLAUDE.md) first.** It is the working
 constitution for this repo.
 

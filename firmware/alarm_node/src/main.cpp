@@ -15,6 +15,134 @@
 #include <RadioLib.h>
 #include "mbedtls/md.h"
 
+#ifdef AUTOSENTRY_ROLE_GATEWAY
+// ============================ HUB USB-SERIAL ↔ LoRa GATEWAY ============================
+// A dumb radio modem (ICD-2). The hub hands it already-signed air bytes (ICD-3) over a
+// COBS+CRC8 serial frame; the gateway transmits them verbatim and forwards received air
+// bytes back. It performs NO HMAC and NO replay checks — the hub owns all authentication
+// (SR-1), so a gateway compromise cannot forge a frame the hub will accept. The framing here
+// mirrors hub/autosentry/comms/transport.py byte-for-byte; golden vectors in
+// test/wire_vectors.json pin both sides (verify with `pio test`).
+
+static const uint8_t GW_CMD_SEND = 0x01;  // host→gw: data = air bytes to transmit
+static const uint8_t GW_CMD_RX = 0x02;    // gw→host: data = rssi(int8) snr(int8) air...
+static const uint8_t GW_DELIM = 0x00;     // frame delimiter (COBS guarantees no interior 0)
+
+SX1262 radio = new Module(LORA_CS, LORA_DIO1, LORA_RST, LORA_BUSY);
+
+static uint8_t gw_crc8(const uint8_t* data, size_t len) {
+  uint8_t crc = 0;
+  for (size_t i = 0; i < len; i++) {
+    crc ^= data[i];
+    for (int b = 0; b < 8; b++)
+      crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0x07) : (uint8_t)(crc << 1);
+  }
+  return crc;
+}
+
+// COBS-encode data[len] into out[]; returns encoded length. out must hold len + len/254 + 2.
+static size_t gw_cobs_encode(const uint8_t* data, size_t len, uint8_t* out) {
+  size_t code_idx = 0, w = 1;  // out[0] reserved for the first code byte
+  uint8_t code = 1;
+  out[0] = 0;
+  for (size_t i = 0; i < len; i++) {
+    if (data[i] == 0) {
+      out[code_idx] = code;
+      code_idx = w++;
+      out[code_idx] = 0;
+      code = 1;
+    } else {
+      out[w++] = data[i];
+      if (++code == 0xFF) {
+        out[code_idx] = code;
+        code_idx = w++;
+        out[code_idx] = 0;
+        code = 1;
+      }
+    }
+  }
+  out[code_idx] = code;
+  return w;
+}
+
+// COBS-decode data[len] into out[]; returns decoded length, or -1 on a malformed frame.
+static int gw_cobs_decode(const uint8_t* data, size_t len, uint8_t* out) {
+  size_t idx = 0, w = 0;
+  while (idx < len) {
+    uint8_t code = data[idx];
+    if (code == 0) return -1;
+    idx++;
+    for (uint8_t k = 1; k < code; k++) {
+      if (idx >= len) return -1;
+      out[w++] = data[idx++];
+    }
+    if (code < 0xFF && idx < len) out[w++] = 0;
+  }
+  return (int)w;
+}
+
+// Forward a received air frame to the host as a CMD_RX frame (COBS+CRC + delimiter).
+static void gw_forward_rx(const uint8_t* air, size_t len, int8_t rssi, int8_t snr) {
+  uint8_t body[300];
+  size_t n = 0;
+  body[n++] = GW_CMD_RX;
+  body[n++] = (uint8_t)(len + 2);  // data length = rssi + snr + air
+  body[n++] = (uint8_t)rssi;
+  body[n++] = (uint8_t)snr;
+  for (size_t i = 0; i < len; i++) body[n++] = air[i];
+  body[n] = gw_crc8(body, n);
+  n++;
+  uint8_t enc[320];
+  size_t e = gw_cobs_encode(body, n, enc);
+  Serial.write(enc, e);
+  Serial.write(GW_DELIM);
+}
+
+// Decode one host frame (delimiter already stripped); on a valid SEND, transmit the air bytes.
+static void gw_handle_host_frame(const uint8_t* enc, size_t len) {
+  uint8_t body[300];
+  int n = gw_cobs_decode(enc, len, body);
+  if (n < 3) return;
+  uint8_t cmd = body[0], dlen = body[1];
+  if ((size_t)n != (size_t)dlen + 3) return;       // cmd(1) + len(1) + data + crc(1)
+  if (gw_crc8(body, (size_t)n - 1) != body[n - 1]) return;
+  if (cmd == GW_CMD_SEND) {
+    radio.transmit(body + 2, dlen);
+    radio.startReceive();
+  }
+}
+
+static uint8_t gw_rxbuf[300];
+static size_t gw_rxlen = 0;
+
+void setup() {
+  Serial.begin(115200);
+  int st = radio.begin(915.0);  // TODO: region band from provisioning (915 US / 868 EU)
+  if (st != RADIOLIB_ERR_NONE) Serial.printf("LoRa init failed: %d\n", st);
+  radio.startReceive();
+}
+
+void loop() {
+  // Host → LoRa: accumulate serial bytes until a delimiter, then handle the frame.
+  while (Serial.available()) {
+    uint8_t b = (uint8_t)Serial.read();
+    if (b == GW_DELIM) {
+      if (gw_rxlen) gw_handle_host_frame(gw_rxbuf, gw_rxlen);
+      gw_rxlen = 0;
+    } else if (gw_rxlen < sizeof(gw_rxbuf)) {
+      gw_rxbuf[gw_rxlen++] = b;
+    } else {
+      gw_rxlen = 0;  // overflow → resync at the next delimiter
+    }
+  }
+  // LoRa → host: forward any received air frame with its RSSI/SNR.
+  uint8_t air[64];
+  int len = radio.readData(air, sizeof(air));
+  if (len > 0) gw_forward_rx(air, (size_t)len, (int8_t)radio.getRSSI(), (int8_t)radio.getSNR());
+}
+
+#else  // ============================ ALARM NODE (default role) ============================
+
 // --- Wire protocol (mirror of protocol.py) ------------------------------------------
 // layout: ver(1) type(1) net_id(1) src(1) dst(1) counter(4 LE) payload(n) hmac(8)
 static const uint8_t  WIRE_VERSION = PROTO_VERSION;
@@ -38,9 +166,22 @@ static const uint8_t HUB_ADDR = 0;
 static const uint8_t FW_VER = 1;        // reported in STATUS (payloads.StatusPayload.fw_ver)
 static const uint8_t CFG_CLEAR = 0x00;  // CONFIG sub-command: silence siren after owner ack
 
-// Pre-shared HMAC key. PLACEHOLDER — injected at provisioning/flash time, never committed.
-static const uint8_t MESH_KEY[] = "REPLACE_AT_PROVISIONING";
+// Pre-shared HMAC key. Injected at provisioning/flash time via a build flag
+// (-DAUTOSENTRY_MESH_KEY="..."), never committed (SR-3). The placeholder fallback only lets
+// the firmware build for bring-up; the node REFUSES to operate on it (see setup()) so a node
+// with no real key fails loudly instead of silently authenticating with a public placeholder.
+// Production should provision into NVS/efuse rather than a build flag (see test/README.md).
+#ifndef AUTOSENTRY_MESH_KEY
+#define AUTOSENTRY_MESH_KEY "REPLACE_AT_PROVISIONING"
+#endif
+static const uint8_t MESH_KEY[] = AUTOSENTRY_MESH_KEY;
 static const size_t  MESH_KEY_LEN = sizeof(MESH_KEY) - 1;
+
+static bool mesh_key_is_placeholder() {
+  static const char kPlaceholder[] = "REPLACE_AT_PROVISIONING";
+  return sizeof(MESH_KEY) == sizeof(kPlaceholder) &&
+         memcmp(MESH_KEY, kPlaceholder, sizeof(MESH_KEY)) == 0;
+}
 
 static const uint32_t HEARTBEAT_INTERVAL_MS = 5000;   // matches comms.hb_interval_s
 static const uint32_t HUB_TIMEOUT_MS = 20000;         // ~ hb_miss_max * interval -> fail-safe
@@ -138,7 +279,21 @@ static void set_siren(bool on) {
 static void send_frame(uint8_t type, uint8_t dst, const uint8_t* payload, size_t len) {
   uint8_t buf[64];
   size_t total = encode_frame(buf, type, dst, payload, len);
-  radio.transmit(buf, total);   // TODO(M3): handle TX errors + return to RX
+  radio.transmit(buf, total);   // TODO(M3): handle TX errors
+  // transmit() leaves the SX1262 in TX/standby — go back to RX immediately so the node is
+  // never deaf to a follow-up ALARM, CONFIG-clear, or hub heartbeat between heartbeats (C2).
+  radio.startReceive();
+}
+
+// ACK / HEARTBEAT_ACK must echo the acknowledged frame's counter as a 4-byte LE payload, so
+// the hub's _observe() (which checks len(payload) >= 4 and decode_ref()) can match it to the
+// command it sent (ICD-3, FR-8). An empty ACK is silently dropped hub-side.
+static void send_ack(uint8_t type, uint32_t ref_counter) {
+  uint8_t ref[4] = {
+    (uint8_t)(ref_counter & 0xFF), (uint8_t)((ref_counter >> 8) & 0xFF),
+    (uint8_t)((ref_counter >> 16) & 0xFF), (uint8_t)((ref_counter >> 24) & 0xFF),
+  };
+  send_frame(type, HUB_ADDR, ref, sizeof(ref));
 }
 
 static bool mains_present() {
@@ -162,17 +317,17 @@ static void handle_frame(const uint8_t* raw, size_t n) {
   switch (type) {
     case MSG_ALARM:
       set_siren(true);
-      send_frame(MSG_ACK, HUB_ADDR, nullptr, 0);   // confirm receipt (FR-8)
+      send_ack(MSG_ACK, counter);   // confirm receipt, echoing the hub's counter (FR-8)
       break;
     case MSG_TEST:
-      send_frame(MSG_ACK, HUB_ADDR, nullptr, 0);
+      send_ack(MSG_ACK, counter);
       break;
     case MSG_HEARTBEAT:
-      send_frame(MSG_HEARTBEAT_ACK, HUB_ADDR, nullptr, 0);
+      send_ack(MSG_HEARTBEAT_ACK, counter);
       break;
     case MSG_CONFIG:
       if (payload_len >= 1 && payload[0] == CFG_CLEAR) set_siren(false);  // owner-ack silence
-      send_frame(MSG_ACK, HUB_ADDR, nullptr, 0);
+      send_ack(MSG_ACK, counter);
       break;
     default:
       break;
@@ -186,6 +341,18 @@ void setup() {
   pinMode(PIN_STROBE, OUTPUT);
   pinMode(PIN_MAINS_SENSE, INPUT_PULLUP);
   set_siren(false);
+
+  // SR-3 / pillar 5: a node flashed without a real mesh key must not run — otherwise it
+  // would HMAC every frame with a publicly-known placeholder, defeating authentication.
+  // Fail loud (blink the strobe + log), never silently "work".
+  if (mesh_key_is_placeholder()) {
+    while (true) {
+      Serial.println("FATAL: mesh key not provisioned (placeholder). Reflash with "
+                     "-DAUTOSENTRY_MESH_KEY; refusing to operate (SR-3).");
+      digitalWrite(PIN_STROBE, HIGH); delay(250);
+      digitalWrite(PIN_STROBE, LOW);  delay(250);
+    }
+  }
 
   int st = radio.begin(915.0);   // TODO: region band from provisioning (915 US / 868 EU)
   if (st != RADIOLIB_ERR_NONE) {
@@ -224,3 +391,5 @@ void loop() {
     set_siren(true);
   }
 }
+
+#endif  // AUTOSENTRY_ROLE_GATEWAY / node role split

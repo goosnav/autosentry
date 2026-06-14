@@ -64,14 +64,33 @@ class TriggerEvaluator:
         return TriggerResult(False)
 
     def _approach_speed(self, t: Track) -> float:
-        """Average centroid speed (px/s) over the track's history — an approach proxy.
+        """Peak recent centroid speed (px/s) — an approach proxy that resists loiter-then-sprint.
 
-        Refined on hardware to "closing speed toward a configured entry"; magnitude of
-        motion is the M1 proxy and is what we threshold on.
+        Measures displacement over the most recent `approach_window_s` seconds rather than the
+        track's whole lifetime. A subject who loiters for a minute then sprints in 2 s would
+        average well below threshold over its lifetime, hiding the sprint; windowing on recent
+        motion catches it (FR-3, PR-2). Refined on hardware to "closing speed toward a
+        configured entry"; magnitude of motion is the proxy we threshold on.
+
+        Falls back to the lifetime average when per-bbox timestamps aren't available (e.g. a
+        Track constructed without `history_ts`), preserving the original behavior.
         """
-        dt = t.last_ts - t.first_ts
-        if dt <= 0.0 or len(t.history) < 2:
+        hist = t.history
+        if len(hist) < 2:
             return 0.0
-        first, last = t.history[0], t.history[-1]
-        dist = math.hypot(last.cx - first.cx, last.cy - first.cy)
-        return dist / dt
+        ts_hist = t.history_ts
+        if len(ts_hist) != len(hist):  # no aligned timestamps -> lifetime-average fallback
+            dt = t.last_ts - t.first_ts
+            if dt <= 0.0:
+                return 0.0
+            return math.hypot(hist[-1].cx - hist[0].cx, hist[-1].cy - hist[0].cy) / dt
+        # Walk back to the earliest sample still inside the recent window, then measure the
+        # displacement from there to the latest sample over that elapsed time.
+        now = ts_hist[-1]
+        i = len(hist) - 1
+        while i > 0 and (now - ts_hist[i - 1]) <= self.cfg.approach_window_s:
+            i -= 1
+        dt = now - ts_hist[i]
+        if dt <= 0.0:
+            return 0.0
+        return math.hypot(hist[-1].cx - hist[i].cx, hist[-1].cy - hist[i].cy) / dt

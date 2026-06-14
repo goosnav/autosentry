@@ -93,8 +93,10 @@ class IoUTracker:
         tr.cls = d.cls
         tr.last_ts = ts
         tr.history.append(d.bbox)
+        tr.history_ts.append(ts)
         if len(tr.history) > self.history:
             tr.history = tr.history[-self.history :]
+            tr.history_ts = tr.history_ts[-self.history :]
         return tr
 
     def _spawn(self, d: Detection, ts: float) -> Track:
@@ -105,6 +107,7 @@ class IoUTracker:
             first_ts=ts,
             last_ts=ts,
             history=[d.bbox],
+            history_ts=[ts],
         )
         self._next_id += 1
         self._tracked.append(_Tracked(track=tr))

@@ -14,9 +14,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"
 from eval_detection import (  # noqa: E402
     Box,
     check_gates,
+    discover_pairs,
     evaluate,
+    ground_truth_boxes,
+    load_names,
     match_image,
+    parse_label_file,
     weapon_fn_rate,
+    yolo_to_bbox,
 )
 
 from autosentry.contracts import BBox  # noqa: E402
@@ -109,3 +114,54 @@ def test_pr4_gate_fails_on_benign_major_alarm():
     report = check_gates(evaluate(images), benign_major_alarms=1)
     assert report.passed is False
     assert any("PR-4" in f for f in report.failures)
+
+
+# --- YOLO-format dataset loading (the loader is pure; the detector run is not tested here) ---
+def test_load_names_default_and_from_file(tmp_path):
+    assert load_names(None)[0] == "person"
+    f = tmp_path / "names.txt"
+    f.write_text("person\nrifle\n")
+    assert load_names(str(f)) == ["person", "rifle"]
+
+
+def test_parse_label_file(tmp_path):
+    f = tmp_path / "img1.txt"
+    f.write_text("0 0.5 0.5 0.2 0.4\n2 0.1 0.1 0.05 0.05\n")
+    rows = parse_label_file(str(f))
+    assert rows[0] == (0, 0.5, 0.5, 0.2, 0.4)
+    assert rows[1][0] == 2
+    assert parse_label_file(str(tmp_path / "missing.txt")) == []  # missing -> empty
+
+
+def test_yolo_to_bbox_converts_to_pixels():
+    b = yolo_to_bbox(0.5, 0.5, 0.2, 0.4, width=100, height=200)
+    assert (b.x1, b.y1, b.x2, b.y2) == (40.0, 60.0, 60.0, 140.0)
+
+
+def test_ground_truth_boxes_maps_class_ids(tmp_path):
+    lbl = tmp_path / "a.txt"
+    lbl.write_text("2 0.5 0.5 0.5 0.5\n")  # class 2 -> "rifle" in the default names
+    boxes = ground_truth_boxes(str(lbl), ["person", "handgun", "rifle", "knife"], 100, 100)
+    assert len(boxes) == 1 and boxes[0].cls == "rifle"
+
+
+def test_discover_pairs_images_labels_layout(tmp_path):
+    (tmp_path / "images").mkdir()
+    (tmp_path / "labels").mkdir()
+    (tmp_path / "images" / "a.jpg").write_bytes(b"x")
+    (tmp_path / "images" / "b.png").write_bytes(b"x")
+    (tmp_path / "labels" / "a.txt").write_text("0 0.5 0.5 0.1 0.1\n")
+    pairs = discover_pairs(str(tmp_path))
+    assert len(pairs) == 2
+    assert pairs[0][0].endswith("a.jpg") and pairs[0][1].endswith("a.txt")
+
+
+def test_discover_pairs_flat_layout(tmp_path):
+    (tmp_path / "x.jpg").write_bytes(b"x")
+    (tmp_path / "x.txt").write_text("")
+    pairs = discover_pairs(str(tmp_path))
+    assert len(pairs) == 1 and pairs[0][1].endswith("x.txt")
+
+
+def test_discover_pairs_empty_dir(tmp_path):
+    assert discover_pairs(str(tmp_path)) == []
